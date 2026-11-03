@@ -1,7 +1,7 @@
 # Clutch Server Sync Protocol
 
 Wire protocol for syncing Clutch state through a server using `WebSocketTransport`
-(`@bkincz/clutch/sync-ws`). The server is a **stamping relay**: it orders messages and
+(`@zerosumstudio/clutch/sync-ws`). The server is a **stamping relay**: it orders messages and
 broadcasts them. It does not need to understand Immer patches or hold application state.
 
 All frames are JSON text messages.

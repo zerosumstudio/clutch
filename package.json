@@ -1,5 +1,5 @@
 {
-  "name": "@bkincz/clutch",
+  "name": "@zerosumstudio/clutch",
   "version": "3.5.0",
   "description": "A TypeScript-first, plugin-based state management library built on Immer",
   "main": "./dist/index.js",
@@ -55,16 +55,16 @@
     "immutable",
     "redux-alternative"
   ],
-  "author": "Benjamin Kinczel <beni.kinczel@gmail.com>",
+  "author": "zerosum studio <hello@zerosum.studio>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bkincz/clutch.git"
+    "url": "https://github.com/zerosumstudio/clutch.git"
   },
   "bugs": {
-    "url": "https://github.com/bkincz/clutch/issues"
+    "url": "https://github.com/zerosumstudio/clutch/issues"
   },
-  "homepage": "https://github.com/bkincz/clutch#readme",
+  "homepage": "https://github.com/zerosumstudio/clutch#readme",
   "peerDependencies": {
     "react": ">=16.8.0 || ^19.0.0"
   },

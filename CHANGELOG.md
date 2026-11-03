@@ -1,6 +1,12 @@
 # Changelog
 
-## 3.5.0 - Unreleased
+## Unreleased
+
+- **Published as `@zerosumstudio/clutch`.** The repo moved to
+  [zerosumstudio/clutch](https://github.com/zerosumstudio/clutch). Swap the package
+  name and the imports, nothing else changes. `@bkincz/clutch` stays on npm at 3.5.0.
+
+## 3.5.0 - 2026-08-13
 
 The React Compiler and server-rendering release. No API removals.
 
@@ -98,6 +104,11 @@ The performance and durability release.
   import time, so importing clutch no longer flips a global immer switch.
 - The object passed as `initialState` is deep-frozen, so external mutation of
   it can no longer corrupt what `reset()` restores.
+
+### Breaking
+
+- **The v2 API and the `createV2Machine` bridge are gone.** Finish the full
+  migration in the [migration guide](./docs/migration-v3.md) before upgrading.
 
 ## 3.1.0 - 2026-07-06
 

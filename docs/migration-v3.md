@@ -1,6 +1,6 @@
 # Migrating from v2 to v3
 
-> **Note:** Everything in this guide applies to `@bkincz/clutch@3.x` only. The `createV2Machine` bridge and all v2 APIs were removed in v4. If you are on v2, migrate to v3 with this guide first, then upgrade to v4.
+> **Note:** v2 was published as `@bkincz/clutch`, and clutch is now `@zerosumstudio/clutch`. The `createV2Machine` bridge only shipped in `@bkincz/clutch@3.0.0` and was removed in 3.2.0, so the bridge route means pinning that release first. The full migration works on any 3.x.
 
 v3 replaces the all-in-one `StateMachine` with a small core plus opt-in plugins. Every v2 feature still exists, but you now install only what you use.
 
@@ -163,7 +163,7 @@ Changes:
 // v2
 import { useStateMachine } from '@bkincz/clutch/react'
 // v3
-import { useMachine } from '@bkincz/clutch/react'
+import { useMachine } from '@zerosumstudio/clutch/react'
 ```
 
 | v2 | v3 |

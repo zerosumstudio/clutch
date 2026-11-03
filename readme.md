@@ -1,8 +1,8 @@
 # Clutch
 
-[![Release](https://github.com/bkincz/clutch/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/bkincz/clutch/actions/workflows/release.yml)
-[![codecov](https://codecov.io/gh/bkincz/clutch/branch/main/graph/badge.svg)](https://codecov.io/gh/bkincz/clutch)
-[![npm version](https://badge.fury.io/js/@bkincz%2Fclutch.svg)](https://badge.fury.io/js/@bkincz%2Fclutch)
+[![Release](https://github.com/zerosumstudio/clutch/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/zerosumstudio/clutch/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/zerosumstudio/clutch/branch/main/graph/badge.svg)](https://codecov.io/gh/zerosumstudio/clutch)
+[![npm version](https://badge.fury.io/js/@zerosumstudio%2Fclutch.svg)](https://badge.fury.io/js/@zerosumstudio%2Fclutch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A TypeScript-first, plugin-based state manager built on Immer. The core does immutable updates and subscriptions. Everything else, like undo/redo, persistence, sync, and DevTools, is a plugin you opt into. You only ship what you use.
@@ -12,19 +12,21 @@ Coming from v2? See the [migration guide](./docs/migration-v3.md).
 ## Installation
 
 ```bash
-pnpm add @bkincz/clutch
+pnpm add @zerosumstudio/clutch
 ```
 ```bash
-npm install @bkincz/clutch
+npm install @zerosumstudio/clutch
 ```
 ```bash
-yarn add @bkincz/clutch
+yarn add @zerosumstudio/clutch
 ```
+
+Up to 3.5.0 this was published as `@bkincz/clutch`. Swap the package name and the imports, the API is the same.
 
 ## Quick Start
 
 ```typescript
-import { createMachine } from '@bkincz/clutch'
+import { createMachine } from '@zerosumstudio/clutch'
 
 interface AppState {
   count: number
@@ -65,7 +67,7 @@ machine.subscribe(
 Install plugins with `.with()`. Each plugin adds its methods to the machine, and to its TypeScript type. Calling a method from a plugin you never installed is a compile error, not a runtime surprise.
 
 ```typescript
-import { createMachine, history, persist, devtools } from '@bkincz/clutch'
+import { createMachine, history, persist, devtools } from '@zerosumstudio/clutch'
 
 const machine = createMachine<AppState>({ initialState })
   .with(history<AppState>({ maxSize: 50 }))
@@ -141,7 +143,7 @@ machine.with(sync<AppState>({
 Adds `startSync()`. By default sync uses a `BroadcastChannel` and starts on install. For server sync, pass the WebSocket transport:
 
 ```typescript
-import { WebSocketTransport } from '@bkincz/clutch/sync-ws'
+import { WebSocketTransport } from '@zerosumstudio/clutch/sync-ws'
 
 machine.with(sync<AppState>({
   transport: new WebSocketTransport({ url: 'wss://example.com/sync' }),
@@ -185,7 +187,7 @@ Adds `forceSave()`, `hasUnsavedChanges()`, `setAutoSaveInterval(ms)`, and `loadF
 Group machines and read them as one combined state:
 
 ```typescript
-import { createMachine, createRegistry, history, persist } from '@bkincz/clutch'
+import { createMachine, createRegistry, history, persist } from '@zerosumstudio/clutch'
 
 const registry = createRegistry({
   user: createMachine<UserState>({ initialState: userInit }).with(history<UserState>()),
@@ -234,7 +236,7 @@ Machines without plugins skip patch generation automatically.
 Independently deployed apps sharing one page need to share state without sharing builds. `sharedMachine` creates a machine once per page and returns the same instance to every caller of the same key, no matter which bundle the call comes from:
 
 ```typescript
-import { createMachine, persist, sharedMachine } from '@bkincz/clutch'
+import { createMachine, persist, sharedMachine } from '@zerosumstudio/clutch'
 
 export const playerMachine = sharedMachine('app:player', () =>
   createMachine<PlayerState>({ initialState }).with(persist<PlayerState>({ key: 'player' })),
@@ -247,7 +249,7 @@ With Module Federation, share clutch as a singleton so only one copy loads:
 
 ```jsonc
 // the shared option of your federation plugin, or "shared" in spool.json
-"shared": ["react", "react-dom", "@bkincz/clutch", "@bkincz/clutch/react"]
+"shared": ["react", "react-dom", "@zerosumstudio/clutch", "@zerosumstudio/clutch/react"]
 ```
 
 Independent deployments can drift: one team ships a new state shape while another app is still built against the old one. Declare a contract version and clutch warns at runtime when two apps disagree on it, naming the key and both versions. Mismatched clutch versions across bundles get the same warning.
@@ -258,14 +260,14 @@ sharedMachine('app:player', factory, { contract: 2 })
 
 For micro frontends in separate iframes or tabs there is no shared page to share an instance on; use the `sync` plugin instead, whose BroadcastChannel transport keeps same-origin machines in step.
 
-See it live: [Resonate](https://spool-demo-shell.pages.dev), a music UI where the browse view, search, and player bar are separately deployed apps sharing one player machine. Built with [spool](https://github.com/bkincz/spool).
+See it live: [Resonate](https://spool-demo-shell.pages.dev), a music UI where the browse view, search, and player bar are separately deployed apps sharing one player machine. Built with [spool](https://github.com/zerosumstudio/spool).
 
 ## React
 
-Hooks live in `@bkincz/clutch/react`. The main entry stays React-free.
+Hooks live in `@zerosumstudio/clutch/react`. The main entry stays React-free.
 
 ```tsx
-import { useMachine, useSlice } from '@bkincz/clutch/react'
+import { useMachine, useSlice } from '@zerosumstudio/clutch/react'
 
 function Counter() {
   const { state, mutate } = useMachine(machine)
@@ -305,8 +307,8 @@ render tree.
 per mount, and a hook that reads it.
 
 ```tsx
-import { createMachine } from '@bkincz/clutch'
-import { createMachineScope, useSlice } from '@bkincz/clutch/react'
+import { createMachine } from '@zerosumstudio/clutch'
+import { createMachineScope, useSlice } from '@zerosumstudio/clutch/react'
 
 const { Provider: UserProvider, useScopedMachine: useUserMachine } = createMachineScope(
   () => createMachine<UserState>({ initialState: { details: null } }),
@@ -342,7 +344,7 @@ state such as UI preferences is fine on a module-level machine.
 A plugin is an object with a name and lifecycle hooks. Whatever `onInit` returns is merged onto the machine and shows up in its type.
 
 ```typescript
-import type { Plugin } from '@bkincz/clutch'
+import type { Plugin } from '@zerosumstudio/clutch'
 
 function logger<T extends object>(): Plugin<T, { getLogCount(): number }> {
   let count = 0
@@ -373,7 +375,7 @@ Plugin names must be unique per machine, and extension keys must not collide wit
 
 ## Migrating from v2
 
-The v2 API and the `createV2Machine` bridge were removed in 3.0.0. The option-to-plugin mapping is in the [migration guide](./docs/migration-v3.md).
+The v2 API and the `createV2Machine` bridge were removed in 3.2.0. The option-to-plugin mapping is in the [migration guide](./docs/migration-v3.md).
 
 ## TypeScript
 
