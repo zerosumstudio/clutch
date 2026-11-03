@@ -16,7 +16,7 @@ export class BroadcastChannelTransport implements SyncTransport {
 	constructor(config?: BroadcastChannelTransportConfig) {
 		if (typeof BroadcastChannel === 'undefined') {
 			console.warn(
-				'[Clutch Sync] BroadcastChannel not supported in this environment. Multi-instance sync disabled.'
+				'[Clutch Sync] BroadcastChannel not supported in this environment. Multi-instance sync disabled.',
 			)
 			return
 		}

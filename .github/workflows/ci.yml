@@ -9,29 +9,32 @@ on:
 permissions:
     contents: read
 
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
     test:
         name: Test
         runs-on: ${{ matrix.os }}
+        permissions:
+            contents: read
+            id-token: write
         strategy:
             fail-fast: false
             matrix:
                 os: [ubuntu-latest, windows-latest]
-                # 22 is the oldest supported line (engines: >=22.12.0).
                 node-version: [22, 24]
 
         steps:
-            # TODO: pin to commit SHAs, as release.yml is. Lower stakes here —
-            # no secrets are exposed to this workflow — but a mutable tag is
-            # still someone else's code running on every push.
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v6
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
             - name: Setup Node.js ${{ matrix.node-version }}
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: ${{ matrix.node-version }}
                   cache: 'pnpm'
@@ -48,15 +51,15 @@ jobs:
             - name: Format check
               run: pnpm run format:check
 
-            # Coverage runs the whole suite; no separate test run needed.
             - name: Test (with coverage)
               run: pnpm run test:coverage
 
             - name: Upload coverage to Codecov
               if: matrix.os == 'ubuntu-latest' && matrix.node-version == 24
-              uses: codecov/codecov-action@v7
+              uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
               with:
-                  token: ${{ secrets.CODECOV_TOKEN }}
+                  use_oidc: true
+                  disable_search: true
                   files: ./coverage/lcov.info
                   fail_ci_if_error: false
 
@@ -67,13 +70,13 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v6
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 24
                   cache: 'pnpm'
@@ -88,7 +91,7 @@ jobs:
               run: pnpm run size
 
             - name: Upload build artifacts
-              uses: actions/upload-artifact@v7
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: dist
                   path: dist
@@ -101,13 +104,13 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@v6
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
             - name: Setup Node.js
-              uses: actions/setup-node@v6
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 24
                   cache: 'pnpm'
@@ -127,14 +130,15 @@ jobs:
                   mkdir -p consumer && cd consumer
                   npm init -y > /dev/null
                   npm pkg set type=module
-                  npm install "$RUNNER_TEMP"/bkincz-clutch-*.tgz react react-dom
+                  npm install "$RUNNER_TEMP"/zerosumstudio-clutch-*.tgz react react-dom
 
             - name: Import every export, ESM and CJS
               working-directory: ${{ runner.temp }}/consumer
               run: |
                   node --input-type=module -e '
-                    const { createMachine, createRegistry } = await import("@bkincz/clutch")
-                    await import("@bkincz/clutch/react")
+                    const { createMachine, createRegistry } = await import("@zerosumstudio/clutch")
+                    await import("@zerosumstudio/clutch/react")
+                    const { WebSocketTransport } = await import("@zerosumstudio/clutch/sync-ws")
 
                     const machine = createMachine({ initialState: { count: 0 } })
                     machine.mutate(draft => { draft.count += 1 }, "increment")
@@ -142,11 +146,14 @@ jobs:
                       throw new Error("mutate did not apply: " + JSON.stringify(machine.getState()))
                     }
                     if (typeof createRegistry !== "function") throw new Error("no createRegistry")
+                    if (typeof WebSocketTransport !== "function") throw new Error("no WebSocketTransport")
                   '
                   node -e '
-                    const clutch = require("@bkincz/clutch")
+                    const clutch = require("@zerosumstudio/clutch")
                     if (typeof clutch.createMachine !== "function") throw new Error("no createMachine from CJS")
-                    require("@bkincz/clutch/react")
+                    require("@zerosumstudio/clutch/react")
+                    const syncWs = require("@zerosumstudio/clutch/sync-ws")
+                    if (typeof syncWs.WebSocketTransport !== "function") throw new Error("no WebSocketTransport from CJS")
                   '
 
             - name: Type-check against the tarball
@@ -154,8 +161,9 @@ jobs:
               run: |
                   npm install typescript@6 @types/react @types/node
                   cat > index.ts <<'TS'
-                  import { createMachine, type Machine } from '@bkincz/clutch'
-                  import { useSlice, useMachine } from '@bkincz/clutch/react'
+                  import { createMachine, type Machine } from '@zerosumstudio/clutch'
+                  import { useSlice, useMachine } from '@zerosumstudio/clutch/react'
+                  import { WebSocketTransport } from '@zerosumstudio/clutch/sync-ws'
 
                   interface Counter {
                       count: number
@@ -163,6 +171,27 @@ jobs:
 
                   const machine: Machine<Counter> = createMachine<Counter>({ initialState: { count: 0 } })
 
-                  export type Exports = [typeof machine.mutate, typeof useSlice, typeof useMachine]
+                  export type Exports = [
+                      typeof machine.mutate,
+                      typeof useSlice,
+                      typeof useMachine,
+                      typeof WebSocketTransport,
+                  ]
                   TS
                   npx tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --jsx react-jsx index.ts
+
+            - name: Type-check the CommonJS types against the tarball
+              working-directory: ${{ runner.temp }}/consumer
+              run: |
+                  cat > index.cts <<'TS'
+                  import clutch = require('@zerosumstudio/clutch')
+                  import react = require('@zerosumstudio/clutch/react')
+                  import syncWs = require('@zerosumstudio/clutch/sync-ws')
+
+                  export type Exports = [
+                      typeof clutch.createMachine,
+                      typeof react.useSlice,
+                      typeof syncWs.WebSocketTransport,
+                  ]
+                  TS
+                  npx tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --jsx react-jsx index.cts

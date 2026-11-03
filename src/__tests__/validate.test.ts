@@ -32,7 +32,7 @@ describe('plugins/validate', () => {
 
 	it('vetoes commits that fail validation', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0)
+			validate<TestState>(state => state.count >= 0),
 		)
 		const listener = vi.fn()
 		machine.subscribe(listener)
@@ -40,7 +40,7 @@ describe('plugins/validate', () => {
 		expect(() =>
 			machine.mutate(draft => {
 				draft.count = -1
-			})
+			}),
 		).toThrow('State validation failed')
 
 		expect(machine.getState().count).toBe(0)
@@ -49,7 +49,7 @@ describe('plugins/validate', () => {
 
 	it('lets valid commits through', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0)
+			validate<TestState>(state => state.count >= 0),
 		)
 
 		machine.mutate(draft => {
@@ -61,7 +61,7 @@ describe('plugins/validate', () => {
 
 	it('vetoes invalid batches', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0)
+			validate<TestState>(state => state.count >= 0),
 		)
 
 		expect(() =>
@@ -72,7 +72,7 @@ describe('plugins/validate', () => {
 				draft => {
 					draft.count = -5
 				},
-			])
+			]),
 		).toThrow('State validation failed')
 
 		expect(machine.getState().count).toBe(0)
@@ -98,7 +98,7 @@ describe('plugins/validate', () => {
 			expect.objectContaining({
 				message: 'State validation failed for external update from "sync"',
 			}),
-			'validate'
+			'validate',
 		)
 	})
 
@@ -122,26 +122,26 @@ describe('plugins/validate', () => {
 
 	it('uses a returned string as the rejection message', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => (state.count >= 0 ? true : 'count must not go negative'))
+			validate<TestState>(state => (state.count >= 0 ? true : 'count must not go negative')),
 		)
 
 		expect(() =>
 			machine.mutate(draft => {
 				draft.count = -1
-			})
+			}),
 		).toThrow('count must not go negative')
 		expect(machine.getState().count).toBe(0)
 	})
 
 	it('keeps the generic message for a plain false', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0)
+			validate<TestState>(state => state.count >= 0),
 		)
 
 		expect(() =>
 			machine.mutate(draft => {
 				draft.count = -1
-			})
+			}),
 		).toThrow('State validation failed')
 	})
 
@@ -150,13 +150,13 @@ describe('plugins/validate', () => {
 	 ***************************************************************************************************/
 	it('accepts a Standard Schema and vetoes commits that violate it', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate(nonNegativeCountSchema())
+			validate(nonNegativeCountSchema()),
 		)
 
 		expect(() =>
 			machine.mutate(draft => {
 				draft.count = -1
-			})
+			}),
 		).toThrow('count must be a non-negative number')
 		expect(machine.getState().count).toBe(0)
 
@@ -185,19 +185,19 @@ describe('plugins/validate', () => {
 			expect.objectContaining({
 				message: expect.stringContaining('count must be a non-negative'),
 			}),
-			'validate'
+			'validate',
 		)
 	})
 
 	it('rejects an async schema, since commits are synchronous', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			validate(nonNegativeCountSchema({ async: true }))
+			validate(nonNegativeCountSchema({ async: true })),
 		)
 
 		expect(() =>
 			machine.mutate(draft => {
 				draft.count = 1
-			})
+			}),
 		).toThrow('Async schema validation is not supported')
 	})
 

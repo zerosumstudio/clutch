@@ -1,7 +1,7 @@
 # Clutch Server Sync Protocol
 
 Wire protocol for syncing Clutch state through a server using `WebSocketTransport`
-(`@bkincz/clutch/sync-ws`). The server is a **stamping relay**: it orders messages and
+(`@zerosumstudio/clutch/sync-ws`). The server is a **stamping relay**: it orders messages and
 broadcasts them. It does not need to understand Immer patches or hold application state.
 
 All frames are JSON text messages.
@@ -72,11 +72,11 @@ For every inbound `state_update` or `patches` message, the server MUST:
 
 ```jsonc
 {
-  "type": "patches",
-  "instanceId": "instance_...",   // Unchanged. Clients use it to ignore their own echo
-  "timestamp": 1781070740908,
-  "patches": [ /* unchanged */ ],
-  "version": 42                    // Server-assigned, monotonic
+	"type": "patches",
+	"instanceId": "instance_...", // Unchanged. Clients use it to ignore their own echo
+	"timestamp": 1781070740908,
+	"patches": [/* unchanged */],
+	"version": 42, // Server-assigned, monotonic
 }
 ```
 
@@ -111,22 +111,22 @@ let version = 0
 const clients = new Set()
 
 function onMessage(sender, msg) {
-  switch (msg.type) {
-    case 'state_update':
-    case 'patches':
-      msg.version = ++version
-      for (const c of clients) c.send(JSON.stringify(msg)) // including sender!
-      break
-    case 'full_sync':
-      for (const c of clients) if (c !== sender) c.send(JSON.stringify(msg))
-      break
-    case 'ping':
-      sender.send(JSON.stringify({ type: 'pong' }))
-      break
-    case 'auth':
-      // validate msg.token; close the socket on failure
-      break
-  }
+	switch (msg.type) {
+		case 'state_update':
+		case 'patches':
+			msg.version = ++version
+			for (const c of clients) c.send(JSON.stringify(msg)) // including sender!
+			break
+		case 'full_sync':
+			for (const c of clients) if (c !== sender) c.send(JSON.stringify(msg))
+			break
+		case 'ping':
+			sender.send(JSON.stringify({ type: 'pong' }))
+			break
+		case 'auth':
+			// validate msg.token; close the socket on failure
+			break
+	}
 }
 ```
 

@@ -1,6 +1,6 @@
 # Migrating from v2 to v3
 
-> **Note:** Everything in this guide applies to `@bkincz/clutch@3.x` only. The `createV2Machine` bridge and all v2 APIs were removed in v4. If you are on v2, migrate to v3 with this guide first, then upgrade to v4.
+> **Note:** v2 was published as `@bkincz/clutch`, and clutch is now `@zerosumstudio/clutch`. The `createV2Machine` bridge only shipped in `@bkincz/clutch@3.0.0` and was removed in 3.2.0, so the bridge route means pinning that release first. The full migration works on any 3.x.
 
 v3 replaces the all-in-one `StateMachine` with a small core plus opt-in plugins. Every v2 feature still exists, but you now install only what you use.
 
@@ -27,9 +27,9 @@ If you subclassed `StateMachine` to override the server hooks, pass them as conf
 
 ```typescript
 const machine = createV2Machine({
-  ...config,
-  saveToServer: state => api.put('/state', state),
-  loadFromServer: () => api.get('/state'),
+	...config,
+	saveToServer: state => api.put('/state', state),
+	loadFromServer: () => api.get('/state'),
 })
 ```
 
@@ -48,55 +48,55 @@ Known differences from real v2, even with the bridge:
 ```typescript
 // v2
 const machine = createStateMachine({
-  initialState,
-  maxHistorySize: 100,
-  persistenceKey: 'app',
-  persistenceFilter: { exclude: ['draft'] },
-  validateState: isValid,
-  enableDevTools: { name: 'App' },
-  enableSync: true,
-  autoSaveIntervalMs: 60_000,
+	initialState,
+	maxHistorySize: 100,
+	persistenceKey: 'app',
+	persistenceFilter: { exclude: ['draft'] },
+	validateState: isValid,
+	enableDevTools: { name: 'App' },
+	enableSync: true,
+	autoSaveIntervalMs: 60_000,
 })
 
 // v3
 const machine = createMachine({ initialState })
-  .with(validate(isValid))
-  .with(history({ maxSize: 100 }))
-  .with(persist({ key: 'app', filter: { exclude: ['draft'] } }))
-  .with(devtools({ name: 'App' }))
-  .with(sync())
-  .with(autosave({ save: state => api.put('/state', state), intervalMs: 60_000 }))
+	.with(validate(isValid))
+	.with(history({ maxSize: 100 }))
+	.with(persist({ key: 'app', filter: { exclude: ['draft'] } }))
+	.with(devtools({ name: 'App' }))
+	.with(sync())
+	.with(autosave({ save: state => api.put('/state', state), intervalMs: 60_000 }))
 ```
 
-| v2 config | v3 plugin |
-|---|---|
-| `maxHistorySize` | `history({ maxSize })` |
-| `persistenceKey`, `enablePersistence` | `persist({ key })` |
-| `persistenceFilter` | `persist({ filter })` |
-| `deferredHydration` | `persist({ deferred: true })` |
-| `validateState` | `validate(fn)` |
-| `enableDevTools` | `devtools(config)` |
-| `enableSync` | `sync(config)` |
-| `enableAutoSave`, `autoSaveIntervalMs` | `autosave({ save, intervalMs, auto })` |
-| `saveToServer` / `loadFromServer` overrides | `autosave({ save, load })` |
-| `middleware` | `onBeforeCommit` / `onCommit` in a custom plugin |
-| `enableLogging` | removed |
+| v2 config                                   | v3 plugin                                        |
+| ------------------------------------------- | ------------------------------------------------ |
+| `maxHistorySize`                            | `history({ maxSize })`                           |
+| `persistenceKey`, `enablePersistence`       | `persist({ key })`                               |
+| `persistenceFilter`                         | `persist({ filter })`                            |
+| `deferredHydration`                         | `persist({ deferred: true })`                    |
+| `validateState`                             | `validate(fn)`                                   |
+| `enableDevTools`                            | `devtools(config)`                               |
+| `enableSync`                                | `sync(config)`                                   |
+| `enableAutoSave`, `autoSaveIntervalMs`      | `autosave({ save, intervalMs, auto })`           |
+| `saveToServer` / `loadFromServer` overrides | `autosave({ save, load })`                       |
+| `middleware`                                | `onBeforeCommit` / `onCommit` in a custom plugin |
+| `enableLogging`                             | removed                                          |
 
 Undo/redo, persistence methods, and save methods only exist on the machine when the matching plugin is installed. TypeScript enforces this.
 
 ### Renamed and moved methods
 
-| v2 | v3 |
-|---|---|
-| `hydrateFromPersisted()` | `hydrate()`, then `startSync()` if you use sync with deferred hydration |
-| `isHydrated` (getter) | `isHydrated()` (method) |
-| `forceSave()` | `forceSave()` from `autosave`. It no longer also writes localStorage. Call `flush()` from `persist` for that |
-| `loadFromServerManually()` | `loadFromServer()` |
-| `applyPatchSet(patches)` | `machine.mutate(draft => applyPatches(draft, patches))` |
-| `on('afterMutate' \| 'error' \| 'destroy')` | `onCommit` / `onError` / `onDestroy` hooks in a custom plugin |
-| `getHistoryInfo()`, `clearHistory()` | unchanged, from `history` |
-| `setAutoSaveInterval(ms)` | unchanged, from `autosave` |
-| `StateMachineError` | `MachineError`, with the same `code` field |
+| v2                                          | v3                                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `hydrateFromPersisted()`                    | `hydrate()`, then `startSync()` if you use sync with deferred hydration                                      |
+| `isHydrated` (getter)                       | `isHydrated()` (method)                                                                                      |
+| `forceSave()`                               | `forceSave()` from `autosave`. It no longer also writes localStorage. Call `flush()` from `persist` for that |
+| `loadFromServerManually()`                  | `loadFromServer()`                                                                                           |
+| `applyPatchSet(patches)`                    | `machine.mutate(draft => applyPatches(draft, patches))`                                                      |
+| `on('afterMutate' \| 'error' \| 'destroy')` | `onCommit` / `onError` / `onDestroy` hooks in a custom plugin                                                |
+| `getHistoryInfo()`, `clearHistory()`        | unchanged, from `history`                                                                                    |
+| `setAutoSaveInterval(ms)`                   | unchanged, from `autosave`                                                                                   |
+| `StateMachineError`                         | `MachineError`, with the same `code` field                                                                   |
 
 ### Middleware
 
@@ -105,15 +105,15 @@ v2 recipe middleware is replaced by plugin hooks. Validation belongs in `onBefor
 ```typescript
 // v2
 const logger: Middleware<S> = (ctx, next, draft) => {
-  console.log('before', ctx.description)
-  next(draft)
-  console.log('after')
+	console.log('before', ctx.description)
+	next(draft)
+	console.log('after')
 }
 
 // v3
 const logger: Plugin<S> = {
-  name: 'logger',
-  onCommit: payload => console.log(payload.description, payload.patches),
+	name: 'logger',
+	onCommit: payload => console.log(payload.description, payload.patches),
 }
 ```
 
@@ -128,11 +128,11 @@ machine.hydrateFromPersisted() // on the client
 
 // v3
 const machine = createMachine({ initialState })
-  .with(persist({ key: 'app', deferred: true }))
-  .with(sync({ autoStart: false }))
+	.with(persist({ key: 'app', deferred: true }))
+	.with(sync({ autoStart: false }))
 
-machine.hydrate()    // on the client
-machine.startSync()  // after hydration
+machine.hydrate() // on the client
+machine.startSync() // after hydration
 ```
 
 Persisted data is compatible. v3 reads the same `{ state, timestamp }` envelope v2 wrote, under the same key.
@@ -163,23 +163,23 @@ Changes:
 // v2
 import { useStateMachine } from '@bkincz/clutch/react'
 // v3
-import { useMachine } from '@bkincz/clutch/react'
+import { useMachine } from '@zerosumstudio/clutch/react'
 ```
 
-| v2 | v3 |
-|---|---|
-| `useStateMachine` | `useMachine` |
-| `useStateSlice` | `useSlice` |
-| `useStateHistory` | `useMachineHistory` |
-| `useStatePersist` | `useAutosave` |
-| `useDeferredHydration` | `useHydration` |
-| `useStateSubscription` | `useSubscription` |
-| `useRegistry`, `useRegistrySlice` | same names, take a v3 `Registry` |
-| `useRegistryMachine` | `useMachine(registry.machines.x)` |
-| `useStateActions`, `useRegistryActions` | call machine/registry methods directly |
-| `useLifecycleEvent` | custom plugin with `onCommit`/`onError` |
-| `useOptimisticUpdate`, `useDebouncedStateUpdate`, `useShallowEqual` | removed |
-| `createStateMachineHooks`, `createRegistryHooks` | removed |
+| v2                                                                  | v3                                      |
+| ------------------------------------------------------------------- | --------------------------------------- |
+| `useStateMachine`                                                   | `useMachine`                            |
+| `useStateSlice`                                                     | `useSlice`                              |
+| `useStateHistory`                                                   | `useMachineHistory`                     |
+| `useStatePersist`                                                   | `useAutosave`                           |
+| `useDeferredHydration`                                              | `useHydration`                          |
+| `useStateSubscription`                                              | `useSubscription`                       |
+| `useRegistry`, `useRegistrySlice`                                   | same names, take a v3 `Registry`        |
+| `useRegistryMachine`                                                | `useMachine(registry.machines.x)`       |
+| `useStateActions`, `useRegistryActions`                             | call machine/registry methods directly  |
+| `useLifecycleEvent`                                                 | custom plugin with `onCommit`/`onError` |
+| `useOptimisticUpdate`, `useDebouncedStateUpdate`, `useShallowEqual` | removed                                 |
+| `createStateMachineHooks`, `createRegistryHooks`                    | removed                                 |
 
 v3 hooks no longer hydrate automatically. `useMachine` only reads state. If you use deferred persistence, render a `useHydration(machine)` call once near the root.
 

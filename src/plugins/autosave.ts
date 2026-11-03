@@ -56,7 +56,7 @@ export function autosave<T extends object>(config: AutosaveConfig<T>): Plugin<T,
 		} catch (error) {
 			const saveError = new MachineError(
 				`Force save failed: ${toError(error).message}`,
-				'PERSISTENCE_ERROR'
+				'PERSISTENCE_ERROR',
 			)
 			ctx.emitError(saveError, 'persist')
 			throw saveError
@@ -87,7 +87,7 @@ export function autosave<T extends object>(config: AutosaveConfig<T>): Plugin<T,
 		if (typeof ms !== 'number' || ms <= 0) {
 			throw new MachineError(
 				'Auto-save interval must be a positive number',
-				'VALIDATION_ERROR'
+				'VALIDATION_ERROR',
 			)
 		}
 

@@ -51,7 +51,7 @@ describe('core Machine', () => {
 					draft.name = 'batched'
 				},
 			],
-			'batch op'
+			'batch op',
 		)
 
 		expect(machine.getState()).toEqual({ count: 1, name: 'batched' })
@@ -76,7 +76,7 @@ describe('core Machine', () => {
 
 	it('rejects an invalid initial state', () => {
 		expect(() => createMachine({ initialState: null as unknown as TestState })).toThrow(
-			MachineError
+			MachineError,
 		)
 	})
 
@@ -95,13 +95,13 @@ describe('core Machine', () => {
 				machine.with({
 					name: 'bad',
 					onInit: () => ({ mutate: () => {} }),
-				})
+				}),
 			).toThrow('collides')
 		})
 
 		it('merges extensions onto the machine with accumulated typing', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>()
+				history<TestState>(),
 			)
 
 			// Calling undo() here doubles as the compile-time check that .with() carried the type
@@ -133,7 +133,7 @@ describe('core Machine', () => {
 			expect(() =>
 				machine.mutate(draft => {
 					draft.count = -1
-				})
+				}),
 			).toThrow('count must be >= 0')
 
 			expect(machine.getState().count).toBe(0)
@@ -162,7 +162,7 @@ describe('core Machine', () => {
 			expect(lateCommit).toHaveBeenCalledTimes(1)
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: 'plugin exploded' }),
-				'plugin:broken:onCommit'
+				'plugin:broken:onCommit',
 			)
 		})
 	})
@@ -189,7 +189,7 @@ describe('core Machine', () => {
 			expect(sourceHook).not.toHaveBeenCalled()
 			expect(otherHook).toHaveBeenCalledWith(
 				expect.objectContaining({ count: 99 }),
-				expect.objectContaining({ source: 'sync' })
+				expect.objectContaining({ source: 'sync' }),
 			)
 		})
 	})
@@ -210,7 +210,7 @@ describe('core Machine', () => {
 			expect(listener).toHaveBeenCalledWith({ count: 9, name: 'migrated' })
 			expect(onExternalState).toHaveBeenCalledWith(
 				{ count: 9, name: 'migrated' },
-				expect.objectContaining({ source: 'replace' })
+				expect.objectContaining({ source: 'replace' }),
 			)
 		})
 	})
@@ -233,7 +233,7 @@ describe('core Machine', () => {
 
 		it('clears history through the full-replace rule', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>()
+				history<TestState>(),
 			)
 
 			machine.mutate(draft => {
@@ -293,7 +293,7 @@ describe('core Machine', () => {
 
 		it('commits per-key patches that history can undo', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>()
+				history<TestState>(),
 			)
 
 			machine.set({ count: 1 })
@@ -341,7 +341,7 @@ describe('core Machine', () => {
 			machine.subscribe(
 				state => state.items,
 				listener,
-				(a, b) => a.length === b.length
+				(a, b) => a.length === b.length,
 			)
 
 			machine.mutate(draft => {

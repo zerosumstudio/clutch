@@ -64,7 +64,7 @@ describe('plugins/persist', () => {
 			seedStored({ count: 42 })
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 
 			expect(machine.getState()).toEqual({ count: 42, name: 'test', secret: 'hidden' })
@@ -75,7 +75,7 @@ describe('plugins/persist', () => {
 			seedStored({ count: 42 })
 
 			createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 
 			vi.runAllTimers()
@@ -86,7 +86,7 @@ describe('plugins/persist', () => {
 			seedStored({ count: 42 })
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, deferred: true })
+				persist<TestState>({ key: KEY, storage, deferred: true }),
 			)
 
 			expect(machine.getState().count).toBe(0)
@@ -99,7 +99,7 @@ describe('plugins/persist', () => {
 
 		it('hydrate() is one-shot and reports whether stored state was applied', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, deferred: true })
+				persist<TestState>({ key: KEY, storage, deferred: true }),
 			)
 
 			expect(machine.hydrate()).toBe(false)
@@ -111,7 +111,7 @@ describe('plugins/persist', () => {
 			storage.store.set(KEY, 'not json {{')
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 
 			expect(machine.getState().count).toBe(0)
@@ -121,17 +121,17 @@ describe('plugins/persist', () => {
 		it('strips prototype pollution keys while hydrating safe ones', () => {
 			storage.store.set(
 				KEY,
-				`{"state":{"count":5,"__proto__":{"polluted":true}},"timestamp":1}`
+				`{"state":{"count":5,"__proto__":{"polluted":true}},"timestamp":1}`,
 			)
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 
 			expect(machine.getState().count).toBe(5)
 			expect(({} as Record<string, unknown>).polluted).toBeUndefined()
 			expect(Object.prototype.hasOwnProperty.call(machine.getState(), '__proto__')).toBe(
-				false
+				false,
 			)
 		})
 
@@ -157,7 +157,7 @@ describe('plugins/persist', () => {
 	describe('writing', () => {
 		it('persists after the debounce window', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, debounceMs: 300 })
+				persist<TestState>({ key: KEY, storage, debounceMs: 300 }),
 			)
 
 			machine.mutate(draft => {
@@ -173,7 +173,7 @@ describe('plugins/persist', () => {
 
 		it('coalesces rapid mutations into one debounced write', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, debounceMs: 300 })
+				persist<TestState>({ key: KEY, storage, debounceMs: 300 }),
 			)
 
 			machine.mutate(draft => {
@@ -194,7 +194,7 @@ describe('plugins/persist', () => {
 
 		it('flush() writes a pending persist immediately', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, debounceMs: 300 })
+				persist<TestState>({ key: KEY, storage, debounceMs: 300 }),
 			)
 
 			machine.mutate(draft => {
@@ -218,7 +218,7 @@ describe('plugins/persist', () => {
 
 			capturedCtx.replaceState(
 				{ count: 9, name: 'remote', secret: 'hidden' },
-				{ source: 'sync' }
+				{ source: 'sync' },
 			)
 
 			vi.advanceTimersByTime(300)
@@ -228,7 +228,7 @@ describe('plugins/persist', () => {
 
 		it('flushes a pending write on destroy', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, debounceMs: 300 })
+				persist<TestState>({ key: KEY, storage, debounceMs: 300 }),
 			)
 
 			machine.mutate(draft => {
@@ -241,7 +241,7 @@ describe('plugins/persist', () => {
 
 		it('clearPersisted removes the stored entry without touching state', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 
 			machine.mutate(draft => {
@@ -260,7 +260,7 @@ describe('plugins/persist', () => {
 	describe('filters', () => {
 		it('applies an exclude filter', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, filter: { exclude: ['secret'] } })
+				persist<TestState>({ key: KEY, storage, filter: { exclude: ['secret'] } }),
 			)
 
 			machine.mutate(draft => {
@@ -273,7 +273,7 @@ describe('plugins/persist', () => {
 
 		it('applies an include filter', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, filter: { include: ['count'] } })
+				persist<TestState>({ key: KEY, storage, filter: { include: ['count'] } }),
 			)
 
 			machine.mutate(draft => {
@@ -290,7 +290,7 @@ describe('plugins/persist', () => {
 					key: KEY,
 					storage,
 					filter: { custom: state => ({ name: state.name.toUpperCase() }) },
-				})
+				}),
 			)
 
 			machine.mutate(draft => {
@@ -317,7 +317,7 @@ describe('plugins/persist', () => {
 			expect(readStored()).toBeNull()
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ code: 'PERSISTENCE_ERROR' }),
-				'persist'
+				'persist',
 			)
 		})
 
@@ -344,7 +344,7 @@ describe('plugins/persist', () => {
 
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: 'Storage quota exceeded' }),
-				'persist'
+				'persist',
 			)
 		})
 	})
@@ -356,7 +356,7 @@ describe('plugins/persist', () => {
 
 		it('writes the configured version into the envelope', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, version: 2 })
+				persist<TestState>({ key: KEY, storage, version: 2 }),
 			)
 			machine.mutate(draft => {
 				draft.count = 1
@@ -374,7 +374,7 @@ describe('plugins/persist', () => {
 			}))
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, version: 2, migrate })
+				persist<TestState>({ key: KEY, storage, version: 2, migrate }),
 			)
 
 			expect(migrate).toHaveBeenCalledWith({ count: 41 }, 1)
@@ -386,7 +386,7 @@ describe('plugins/persist', () => {
 			seedVersioned({ count: 41 }, 1)
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage, version: 2 })
+				persist<TestState>({ key: KEY, storage, version: 2 }),
 			)
 
 			expect(machine.getState().count).toBe(0)
@@ -398,7 +398,7 @@ describe('plugins/persist', () => {
 			seedVersioned({ count: 41 })
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: KEY, storage })
+				persist<TestState>({ key: KEY, storage }),
 			)
 			expect(machine.getState().count).toBe(41)
 		})

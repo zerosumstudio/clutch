@@ -21,7 +21,7 @@ class MockWebSocket {
 
 	constructor(
 		public url: string,
-		public protocols?: string | string[]
+		public protocols?: string | string[],
 	) {
 		MockWebSocket.instances.push(this)
 	}
@@ -56,7 +56,7 @@ class MockWebSocket {
 }
 
 const createTransport = (
-	config: Partial<ConstructorParameters<typeof WebSocketTransport>[0]> = {}
+	config: Partial<ConstructorParameters<typeof WebSocketTransport>[0]> = {},
 ) =>
 	new WebSocketTransport({
 		url: 'wss://example.test/sync',
@@ -104,7 +104,7 @@ describe('WebSocketTransport', () => {
 
 		transport.send({ type: 'state_update', state: { count: 1 } })
 		expect(MockWebSocket.last().sent).toContain(
-			JSON.stringify({ type: 'state_update', state: { count: 1 } })
+			JSON.stringify({ type: 'state_update', state: { count: 1 } }),
 		)
 
 		MockWebSocket.last().dispatch('message', {
@@ -216,7 +216,7 @@ describe('WebSocketTransport', () => {
 		vi.advanceTimersByTime(60000)
 		expect(MockWebSocket.instances).toHaveLength(3)
 		expect(onError).toHaveBeenCalledWith(
-			expect.objectContaining({ message: expect.stringContaining('max retries') })
+			expect.objectContaining({ message: expect.stringContaining('max retries') }),
 		)
 	})
 
@@ -340,7 +340,7 @@ describe('StateSyncManager server-version ordering', () => {
 			() => currentState,
 			(state, patches) => {
 				applied.push({ state, patches })
-			}
+			},
 		)
 		ownInstanceId = transport.sent[0].instanceId
 		return manager
@@ -398,7 +398,7 @@ describe('StateSyncManager server-version ordering', () => {
 				type: 'patches',
 				state: undefined,
 				patches: [{ op: 'replace', path: ['count'], value: 5 }],
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(1)
@@ -467,7 +467,7 @@ describe('StateSyncManager server-version ordering', () => {
 		createManager()
 
 		transport.deliver(
-			versioned(1, { state: JSON.parse('{"count": 1, "name": "x", "constructor": {}}') })
+			versioned(1, { state: JSON.parse('{"count": 1, "name": "x", "constructor": {}}') }),
 		)
 
 		expect(applied).toHaveLength(0)

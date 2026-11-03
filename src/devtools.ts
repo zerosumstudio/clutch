@@ -15,15 +15,29 @@ export interface DevToolsConfig {
 	}
 }
 
-interface DevToolsExtension {
-	connect: (config: any) => DevToolsConnection
+interface DevToolsMessage {
+	type?: string
+	state?: string
+	payload?: {
+		type?: string
+		nextLiftedState?: { computedStates?: { state?: unknown }[] }
+	}
 }
 
 interface DevToolsConnection {
-	init: (state: any) => void
-	send: (action: any, state: any, options: any, instanceId: string) => void
-	subscribe: (listener: (message: any) => void) => () => void
+	init: (state: unknown) => void
+	send: (
+		action: { type: string; patches: number },
+		state: unknown,
+		options: object,
+		instanceId: string,
+	) => void
+	subscribe: (listener: (message: DevToolsMessage) => void) => () => void
 	unsubscribe: () => void
+}
+
+interface DevToolsExtension {
+	connect: (config: object) => DevToolsConnection
 }
 
 /*
@@ -38,7 +52,7 @@ export class DevToolsConnector<T extends object> {
 	constructor(
 		name: string,
 		config: DevToolsConfig,
-		private onTimeTravel: (state: T) => void
+		private onTimeTravel: (state: T) => void,
 	) {
 		this.instanceId = `${name}_${Date.now()}`
 		this.config = this.normalizeConfig(name, config)
@@ -64,10 +78,12 @@ export class DevToolsConnector<T extends object> {
 			return
 		}
 
-		const ext = (window as any).__REDUX_DEVTOOLS_EXTENSION__ as DevToolsExtension | undefined
+		const ext = (window as { __REDUX_DEVTOOLS_EXTENSION__?: DevToolsExtension })
+			.__REDUX_DEVTOOLS_EXTENSION__
+
 		if (!ext) {
 			console.warn(
-				'[Clutch DevTools] Redux DevTools Extension not found. Install it from: https://github.com/reduxjs/redux-devtools'
+				'[Clutch DevTools] Redux DevTools Extension not found. Install it from: https://github.com/reduxjs/redux-devtools',
 			)
 			return
 		}
@@ -81,7 +97,7 @@ export class DevToolsConnector<T extends object> {
 				features: this.config.features,
 			})
 
-			this.unsubscribe = this.extension.subscribe((message: any) => {
+			this.unsubscribe = this.extension.subscribe(message => {
 				if (message.type === 'DISPATCH') {
 					this.handleDispatch(message)
 				}
@@ -104,7 +120,7 @@ export class DevToolsConnector<T extends object> {
 				},
 				state,
 				{},
-				this.instanceId
+				this.instanceId,
 			)
 		} catch (error) {
 			console.error('[Clutch DevTools] Failed to send action:', error)
@@ -123,7 +139,7 @@ export class DevToolsConnector<T extends object> {
 		}
 	}
 
-	private handleDispatch(message: any): void {
+	private handleDispatch(message: DevToolsMessage): void {
 		try {
 			switch (message.payload?.type) {
 				case 'JUMP_TO_STATE':
@@ -136,7 +152,7 @@ export class DevToolsConnector<T extends object> {
 								key === 'prototype'
 							) {
 								console.warn(
-									'[Clutch DevTools] Detected prototype pollution attempt'
+									'[Clutch DevTools] Detected prototype pollution attempt',
 								)
 								return undefined
 							}
@@ -153,7 +169,7 @@ export class DevToolsConnector<T extends object> {
 							Object.prototype.hasOwnProperty.call(parsed, 'constructor')
 						) {
 							console.error(
-								'[Clutch DevTools] Detected prototype pollution in DevTools state'
+								'[Clutch DevTools] Detected prototype pollution in DevTools state',
 							)
 							return
 						}
@@ -163,7 +179,7 @@ export class DevToolsConnector<T extends object> {
 					break
 
 				case 'IMPORT_STATE': {
-					const { nextLiftedState } = message.payload
+					const nextLiftedState = message.payload.nextLiftedState
 					if (nextLiftedState?.computedStates) {
 						const computedStates = nextLiftedState.computedStates
 						const lastState = computedStates[computedStates.length - 1]
@@ -179,12 +195,12 @@ export class DevToolsConnector<T extends object> {
 								stateStr.includes('"constructor"')
 							) {
 								console.error(
-									'[Clutch DevTools] Detected prototype pollution in imported state'
+									'[Clutch DevTools] Detected prototype pollution in imported state',
 								)
 								return
 							}
 
-							this.onTimeTravel(lastState.state)
+							this.onTimeTravel(lastState.state as T)
 						}
 					}
 					break
