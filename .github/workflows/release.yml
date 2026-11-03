@@ -5,26 +5,31 @@ on:
         tags:
             - 'v*'
 
+permissions:
+    contents: read
+
 jobs:
     release:
         name: Release
         runs-on: ubuntu-latest
         permissions:
-            contents: write
+            contents: read
             id-token: write
 
         steps:
             - name: Checkout
-              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0
 
             - name: Setup pnpm
-              uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+              uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
             - name: Setup Node.js
-              uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version: 24
-                  cache: 'pnpm'
                   registry-url: 'https://registry.npmjs.org'
 
             - name: Install dependencies
@@ -39,18 +44,40 @@ jobs:
                       exit 1
                   fi
 
+            - name: Check the tagged commit is on main
+              run: |
+                  git fetch --no-tags origin main
+                  if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+                      echo "Tagged commit $GITHUB_SHA is not on main"
+                      exit 1
+                  fi
+
             - name: Verify
               run: pnpm run verify
 
-            - name: Publish to npm
-              run: pnpm publish --provenance --access public --no-git-checks --ignore-scripts
+            - name: Pack the tarball
+              run: pnpm pack --pack-destination "$RUNNER_TEMP"
+
+            - name: Stage on npm
+              run: |
+                  if [[ "$GITHUB_REF_NAME" == *-* ]]; then DIST_TAG=next; else DIST_TAG=latest; fi
+                  npm stage publish "$RUNNER_TEMP"/zerosumstudio-clutch-*.tgz --provenance --access public --ignore-scripts --tag "$DIST_TAG"
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+    github-release:
+        name: GitHub Release
+        runs-on: ubuntu-latest
+        needs: release
+        permissions:
+            contents: write
+
+        steps:
             - name: Create GitHub Release
-              uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+              uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
               with:
                   name: Release ${{ github.ref_name }}
+                  body: The npm version is staged and waiting for approval on npmjs.com.
                   draft: false
                   prerelease: ${{ contains(github.ref_name, '-') }}
                   generate_release_notes: true

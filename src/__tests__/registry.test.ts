@@ -77,7 +77,7 @@ describe('registry', () => {
 		it('preserves plugin extensions per machine', () => {
 			const registry = createRegistry({
 				user: createMachine<UserState>({ initialState: { name: 'beni' } }).with(
-					history<UserState>()
+					history<UserState>(),
 				),
 				cart: createMachine<CartState>({ initialState: { items: 0 } }),
 			})
@@ -122,10 +122,10 @@ describe('registry', () => {
 
 			const registry = createRegistry({
 				good: createMachine<UserState>({ initialState: { name: 'a' } }).with(
-					autosave<UserState>({ save: goodSave })
+					autosave<UserState>({ save: goodSave }),
 				),
 				bad: createMachine<CartState>({ initialState: { items: 0 } }).with(
-					autosave<CartState>({ save: badSave })
+					autosave<CartState>({ save: badSave }),
 				),
 				plain: createMachine<CartState>({ initialState: { items: 0 } }),
 			})
@@ -148,7 +148,7 @@ describe('registry', () => {
 		it('hasUnsavedChanges aggregates across autosave machines', () => {
 			const registry = createRegistry({
 				tracked: createMachine<UserState>({ initialState: { name: 'a' } }).with(
-					autosave<UserState>({ save: () => {} })
+					autosave<UserState>({ save: () => {} }),
 				),
 				plain: createMachine<CartState>({ initialState: { items: 0 } }),
 			})
@@ -169,7 +169,7 @@ describe('registry', () => {
 		it('clearAllHistory reaches only history-equipped machines', () => {
 			const registry = createRegistry({
 				tracked: createMachine<UserState>({ initialState: { name: 'a' } }).with(
-					history<UserState>()
+					history<UserState>(),
 				),
 				plain: createMachine<CartState>({ initialState: { items: 0 } }),
 			})
@@ -197,12 +197,12 @@ describe('registry', () => {
 				const storage = createMemoryStorage()
 				storage.store.set(
 					'user',
-					JSON.stringify({ state: { name: 'stored' }, timestamp: Date.now() })
+					JSON.stringify({ state: { name: 'stored' }, timestamp: Date.now() }),
 				)
 
 				const registry = createRegistry({
 					user: createMachine<UserState>({ initialState: { name: 'a' } }).with(
-						persist<UserState>({ key: 'user', storage, deferred: true })
+						persist<UserState>({ key: 'user', storage, deferred: true }),
 					),
 					plain: createMachine<CartState>({ initialState: { items: 0 } }),
 				})

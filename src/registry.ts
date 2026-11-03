@@ -39,7 +39,7 @@ export class Registry<M extends MachineMap> {
 				machine.subscribe(() => {
 					this.cached = null
 					this.notify()
-				})
+				}),
 			)
 		}
 	}
@@ -116,7 +116,7 @@ export class Registry<M extends MachineMap> {
 				saves.push(
 					candidate.forceSave().catch(() => {
 						// Already reported through the machine's own onError plugins
-					})
+					}),
 				)
 			}
 		}

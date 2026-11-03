@@ -127,7 +127,7 @@ export class Machine<T extends object> {
 		if (this.plugins.some(installed => installed.name === plugin.name)) {
 			throw new MachineError(
 				`Plugin "${plugin.name}" is already installed`,
-				'DUPLICATE_PLUGIN'
+				'DUPLICATE_PLUGIN',
 			)
 		}
 
@@ -139,7 +139,7 @@ export class Machine<T extends object> {
 				if (key in this) {
 					throw new MachineError(
 						`Plugin "${plugin.name}" extension "${key}" collides with an existing member`,
-						'EXTENSION_COLLISION'
+						'EXTENSION_COLLISION',
 					)
 				}
 			}
@@ -161,12 +161,12 @@ export class Machine<T extends object> {
 	public subscribe<S>(
 		selector: (state: T) => S,
 		listener: (selected: S, previous: S) => void,
-		equalityFn?: (a: S, b: S) => boolean
+		equalityFn?: (a: S, b: S) => boolean,
 	): () => void
 	public subscribe<S>(
 		selectorOrListener: ((state: T) => void) | ((state: T) => S),
 		maybeListener?: (selected: S, previous: S) => void,
-		equalityFn: (a: S, b: S) => boolean = Object.is
+		equalityFn: (a: S, b: S) => boolean = Object.is,
 	): () => void {
 		this.assertNotDestroyed()
 
@@ -274,7 +274,7 @@ export class Machine<T extends object> {
 
 	public batch(
 		mutations: Array<(draft: Draft<T>) => void> | ((draft: Draft<T>) => void),
-		description?: string
+		description?: string,
 	): void {
 		this.assertNotDestroyed()
 
@@ -295,7 +295,7 @@ export class Machine<T extends object> {
 				if (typeof recipe !== 'function') {
 					throw new MachineError(
 						`Mutation at index ${index} must be a function`,
-						'VALIDATION_ERROR'
+						'VALIDATION_ERROR',
 					)
 				}
 				return produce(currentState, recipe)
@@ -315,7 +315,7 @@ export class Machine<T extends object> {
 			if (typeof recipe !== 'function') {
 				throw new MachineError(
 					`Mutation at index ${index} must be a function`,
-					'VALIDATION_ERROR'
+					'VALIDATION_ERROR',
 				)
 			}
 
@@ -397,7 +397,7 @@ export class Machine<T extends object> {
 		patches: Patch[],
 		inversePatches: Patch[],
 		description: string | undefined,
-		operation: CommitOperation
+		operation: CommitOperation,
 	): void {
 		const payload: CommitPayload<T> = {
 			state: nextState,

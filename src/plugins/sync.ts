@@ -52,9 +52,9 @@ export function sync<T extends object>(config: SyncPluginConfig<T> = {}): Plugin
 					ctx?.emitError(
 						new MachineError(
 							`Sync dropped a remote update that failed the schema: ${rejection}`,
-							'VALIDATION_ERROR'
+							'VALIDATION_ERROR',
 						),
-						SYNC_SOURCE
+						SYNC_SOURCE,
 					)
 					return
 				}
@@ -63,7 +63,7 @@ export function sync<T extends object>(config: SyncPluginConfig<T> = {}): Plugin
 					meta.patches = patches
 				}
 				ctx?.replaceState(state, meta)
-			}
+			},
 		)
 	}
 
@@ -85,7 +85,7 @@ export function sync<T extends object>(config: SyncPluginConfig<T> = {}): Plugin
 				payload.state,
 				payload.patches,
 				payload.inversePatches,
-				payload.description
+				payload.description,
 			)
 		},
 

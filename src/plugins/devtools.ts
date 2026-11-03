@@ -26,7 +26,7 @@ export function devtools<T extends object>(config: DevtoolsConfig = {}): Plugin<
 				ctx.replaceState(state, {
 					source: DEVTOOLS_SOURCE,
 					description: 'DevTools time-travel',
-				})
+				}),
 			)
 
 			connector.init(ctx.getState())
@@ -36,7 +36,7 @@ export function devtools<T extends object>(config: DevtoolsConfig = {}): Plugin<
 			connector?.send(
 				payload.description ?? payload.operation,
 				payload.state,
-				payload.patches
+				payload.patches,
 			)
 		},
 

@@ -17,7 +17,7 @@ const VALIDATE_SOURCE = 'validate'
  *   PLUGIN
  ***************************************************************************************************/
 export function validate<T extends object>(
-	validator: StateValidator<T> | StandardSchemaV1<T>
+	validator: StateValidator<T> | StandardSchemaV1<T>,
 ): Plugin<T> {
 	const check = toValidator(validator)
 
@@ -49,9 +49,9 @@ export function validate<T extends object>(
 			ctx?.emitError(
 				new MachineError(
 					`State validation failed for external update from "${meta.source}"${detail}`,
-					'VALIDATION_ERROR'
+					'VALIDATION_ERROR',
 				),
-				'validate'
+				'validate',
 			)
 		},
 
@@ -66,7 +66,7 @@ export function validate<T extends object>(
  ***************************************************************************************************/
 /** Normalizes a Standard Schema into the predicate the plugin already speaks. */
 function toValidator<T extends object>(
-	validator: StateValidator<T> | StandardSchemaV1<T>
+	validator: StateValidator<T> | StandardSchemaV1<T>,
 ): StateValidator<T> {
 	if (isStandardSchema<T>(validator)) {
 		return state => checkSchema(validator, state)

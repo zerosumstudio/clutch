@@ -145,7 +145,7 @@ describe('StateSyncManager with injected transport', () => {
 			() => currentState,
 			(state, patches) => {
 				applied.push({ state, patches })
-			}
+			},
 		)
 
 	beforeEach(() => {
@@ -206,7 +206,7 @@ describe('StateSyncManager with injected transport', () => {
 		createManager({ mergeStrategy: 'latest' })
 
 		transport.deliver(
-			remoteMessage({ type: 'state_update', state: { count: 7, name: 'remote' } })
+			remoteMessage({ type: 'state_update', state: { count: 7, name: 'remote' } }),
 		)
 
 		expect(applied).toHaveLength(1)
@@ -220,7 +220,7 @@ describe('StateSyncManager with injected transport', () => {
 			remoteMessage({
 				type: 'patches',
 				patches: [{ op: 'replace', path: ['count'], value: 42 }],
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(1)
@@ -236,7 +236,7 @@ describe('StateSyncManager with injected transport', () => {
 				type: 'state_update',
 				instanceId: ownInstanceId,
 				state: { count: 9, name: 'self' },
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(0)
@@ -250,7 +250,7 @@ describe('StateSyncManager with injected transport', () => {
 				type: 'state_update',
 				timestamp: Date.now() - 6 * 60 * 1000,
 				state: { count: 9, name: 'old' },
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(0)
@@ -261,14 +261,14 @@ describe('StateSyncManager with injected transport', () => {
 		const now = Date.now()
 
 		transport.deliver(
-			remoteMessage({ type: 'state_update', timestamp: now, state: { count: 1, name: 'a' } })
+			remoteMessage({ type: 'state_update', timestamp: now, state: { count: 1, name: 'a' } }),
 		)
 		transport.deliver(
 			remoteMessage({
 				type: 'state_update',
 				timestamp: now - 1,
 				state: { count: 2, name: 'b' },
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(1)
@@ -282,7 +282,7 @@ describe('StateSyncManager with injected transport', () => {
 			remoteMessage({
 				type: 'state_update',
 				state: JSON.parse('{"count": 1, "name": "x", "constructor": {}}'),
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(0)
@@ -295,7 +295,7 @@ describe('StateSyncManager with injected transport', () => {
 			remoteMessage({
 				type: 'patches',
 				patches: [{ op: 'replace', path: ['__proto__', 'polluted'], value: true }],
-			})
+			}),
 		)
 
 		expect(applied).toHaveLength(0)

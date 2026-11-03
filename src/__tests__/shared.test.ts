@@ -114,12 +114,12 @@ describe('sharedMachine', () => {
 
 	it('preserves plugin extensions on the shared instance', () => {
 		const withApi = sharedMachine('app:player', () =>
-			Object.assign(build(), { customMethod: () => 42 })
+			Object.assign(build(), { customMethod: () => 42 }),
 		)
 		expect(withApi.customMethod()).toBe(42)
 
 		const again = sharedMachine('app:player', () =>
-			Object.assign(build(), { customMethod: () => 42 })
+			Object.assign(build(), { customMethod: () => 42 }),
 		)
 		expect(again.customMethod()).toBe(42)
 	})
@@ -195,7 +195,7 @@ describe('sharedMachine', () => {
 		}
 
 		expect(() =>
-			sharedMachine('app:player', buildV2, { version: 2, migrate: prev => prev })
+			sharedMachine('app:player', buildV2, { version: 2, migrate: prev => prev }),
 		).not.toThrow()
 	})
 

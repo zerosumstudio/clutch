@@ -123,7 +123,7 @@ export function persist<T extends object>(config: PersistConfig<T>): Plugin<T, P
 			if (serialized.length > maxChars) {
 				ctx.emitError(
 					new MachineError('State too large to persist', 'PERSISTENCE_ERROR'),
-					'persist'
+					'persist',
 				)
 				return
 			}
@@ -133,7 +133,7 @@ export function persist<T extends object>(config: PersistConfig<T>): Plugin<T, P
 			if (error instanceof Error && error.name === 'QuotaExceededError') {
 				ctx.emitError(
 					new MachineError('Storage quota exceeded', 'PERSISTENCE_ERROR'),
-					'persist'
+					'persist',
 				)
 			}
 		}
@@ -198,7 +198,7 @@ export function persist<T extends object>(config: PersistConfig<T>): Plugin<T, P
 			if (persistedVersion !== expectedVersion) {
 				if (!config.migrate) {
 					console.warn(
-						`[Clutch] Discarding "${config.key}": it was persisted as version ${persistedVersion}, this app expects ${expectedVersion} and no migrate() is configured.`
+						`[Clutch] Discarding "${config.key}": it was persisted as version ${persistedVersion}, this app expects ${expectedVersion} and no migrate() is configured.`,
 					)
 					return null
 				}
