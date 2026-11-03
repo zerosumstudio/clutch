@@ -86,7 +86,7 @@ export class StateSyncManager<T extends object> {
 	constructor(
 		config: SyncConfig,
 		private getCurrentState: () => T,
-		private applyRemoteState: (state: T, patches?: Patch[]) => void
+		private applyRemoteState: (state: T, patches?: Patch[]) => void,
 	) {
 		this.instanceId = `instance_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 		this.config = this.normalizeConfig(config)
@@ -133,7 +133,7 @@ export class StateSyncManager<T extends object> {
 		state: T,
 		patches: Patch[],
 		inversePatches: Patch[],
-		description?: string
+		description?: string,
 	): void {
 		if (this.config.ignoreLocalChanges) {
 			return
@@ -217,7 +217,7 @@ export class StateSyncManager<T extends object> {
 
 		if (Math.abs(message.timestamp - Date.now()) > this.config.maxClockSkewMs) {
 			console.warn(
-				'[Clutch Sync] Ignoring message outside clock-skew tolerance. If peers run on devices with skewed clocks, raise maxClockSkewMs.'
+				'[Clutch Sync] Ignoring message outside clock-skew tolerance. If peers run on devices with skewed clocks, raise maxClockSkewMs.',
 			)
 			return
 		}
@@ -313,7 +313,7 @@ export class StateSyncManager<T extends object> {
 
 							if ('value' in patch && containsDangerousKeys(patch.value)) {
 								console.error(
-									'[Clutch Sync] Dangerous keys in patch value, rejected'
+									'[Clutch Sync] Dangerous keys in patch value, rejected',
 								)
 								return false
 							}

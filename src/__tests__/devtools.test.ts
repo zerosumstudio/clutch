@@ -49,11 +49,11 @@ describe('plugins/devtools', () => {
 
 	it('connects and sends the initial state on install', () => {
 		createMachine({ initialState: initialState() }).with(
-			devtools<TestState>({ name: 'TestApp', maxAge: 10 })
+			devtools<TestState>({ name: 'TestApp', maxAge: 10 }),
 		)
 
 		expect(mockExtension.connect).toHaveBeenCalledWith(
-			expect.objectContaining({ name: 'TestApp', maxAge: 10 })
+			expect.objectContaining({ name: 'TestApp', maxAge: 10 }),
 		)
 		expect(mockConnection.init).toHaveBeenCalledWith({ count: 0, name: 'test' })
 	})
@@ -69,7 +69,7 @@ describe('plugins/devtools', () => {
 			{ type: 'increment', patches: 1 },
 			expect.objectContaining({ count: 1 }),
 			{},
-			expect.any(String)
+			expect.any(String),
 		)
 	})
 
@@ -84,7 +84,7 @@ describe('plugins/devtools', () => {
 			expect.objectContaining({ type: 'mutate' }),
 			expect.anything(),
 			{},
-			expect.any(String)
+			expect.any(String),
 		)
 	})
 
@@ -105,7 +105,7 @@ describe('plugins/devtools', () => {
 			expect.objectContaining({ type: 'external:sync' }),
 			expect.objectContaining({ count: 9 }),
 			{},
-			expect.any(String)
+			expect.any(String),
 		)
 	})
 
@@ -125,7 +125,7 @@ describe('plugins/devtools', () => {
 			expect.objectContaining({ type: 'increment' }),
 			expect.objectContaining({ count: 0 }),
 			{},
-			expect.any(String)
+			expect.any(String),
 		)
 	})
 
@@ -155,7 +155,7 @@ describe('plugins/devtools', () => {
 
 		it('applies the last computed state from IMPORT_STATE', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>()
+				devtools<TestState>(),
 			)
 
 			dispatch({
@@ -177,7 +177,7 @@ describe('plugins/devtools', () => {
 
 		it('rejects prototype pollution in time-travel payloads', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>()
+				devtools<TestState>(),
 			)
 
 			dispatch({
@@ -188,7 +188,7 @@ describe('plugins/devtools', () => {
 
 			expect(({} as Record<string, unknown>).polluted).toBeUndefined()
 			expect(Object.prototype.hasOwnProperty.call(machine.getState(), '__proto__')).toBe(
-				false
+				false,
 			)
 		})
 	})
@@ -221,7 +221,7 @@ describe('plugins/devtools', () => {
 
 		try {
 			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>()
+				devtools<TestState>(),
 			)
 
 			machine.mutate(draft => {

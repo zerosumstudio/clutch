@@ -27,7 +27,7 @@ import type { AutosaveApi } from './plugins/autosave'
 export function useMachine<T extends object>(machine: Machine<T>) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => machine.subscribe(onStoreChange),
-		[machine]
+		[machine],
 	)
 
 	const getSnapshot = useCallback(() => machine.getState(), [machine])
@@ -37,14 +37,14 @@ export function useMachine<T extends object>(machine: Machine<T>) {
 		(recipe: (draft: Draft<T>) => void, description?: string) => {
 			machine.mutate(recipe, description)
 		},
-		[machine]
+		[machine],
 	)
 
 	const batch = useCallback(
 		(mutations: Array<(draft: Draft<T>) => void>, description?: string) => {
 			machine.batch(mutations, description)
 		},
-		[machine]
+		[machine],
 	)
 
 	return { state, mutate, batch }
@@ -53,11 +53,11 @@ export function useMachine<T extends object>(machine: Machine<T>) {
 export function useSlice<T extends object, TSelected>(
 	machine: Machine<T>,
 	selector: (state: T) => TSelected,
-	equalityFn: (a: TSelected, b: TSelected) => boolean = Object.is
+	equalityFn: (a: TSelected, b: TSelected) => boolean = Object.is,
 ) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => machine.subscribe(onStoreChange),
-		[machine]
+		[machine],
 	)
 
 	const getSnapshot = useCallback(() => machine.getState(), [machine])
@@ -67,13 +67,13 @@ export function useSlice<T extends object, TSelected>(
 		getSnapshot,
 		getSnapshot,
 		selector,
-		equalityFn
+		equalityFn,
 	)
 }
 
 export function useSubscription<T extends object>(
 	machine: Machine<T>,
-	callback: (state: T) => void
+	callback: (state: T) => void,
 ) {
 	const callbackRef = useRef(callback)
 
@@ -92,7 +92,7 @@ export function useSubscription<T extends object>(
 export function useRegistry<M extends MachineMap>(registry: Registry<M>) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => registry.subscribe(onStoreChange),
-		[registry]
+		[registry],
 	)
 	const getSnapshot = useCallback(() => registry.getState(), [registry])
 
@@ -102,11 +102,11 @@ export function useRegistry<M extends MachineMap>(registry: Registry<M>) {
 export function useRegistrySlice<M extends MachineMap, TSelected>(
 	registry: Registry<M>,
 	selector: (state: RegistryState<M>) => TSelected,
-	equalityFn: (a: TSelected, b: TSelected) => boolean = Object.is
+	equalityFn: (a: TSelected, b: TSelected) => boolean = Object.is,
 ) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => registry.subscribe(onStoreChange),
-		[registry]
+		[registry],
 	)
 
 	const getSnapshot = useCallback(() => registry.getState(), [registry])
@@ -116,7 +116,7 @@ export function useRegistrySlice<M extends MachineMap, TSelected>(
 		getSnapshot,
 		getSnapshot,
 		selector,
-		equalityFn
+		equalityFn,
 	)
 }
 
@@ -177,7 +177,7 @@ function sameSeed(a: object | undefined, b: object | undefined): boolean {
 	return keys.every(
 		key =>
 			key in b &&
-			Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+			Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
 	)
 }
 
@@ -214,7 +214,7 @@ export function createMachineScope<M>(factory: () => M, name = 'Machine'): Machi
 
 		if (machine === null) {
 			throw new Error(
-				`[Clutch] The ${name} scope was read outside its Provider. Render the Provider returned by createMachineScope above this component.`
+				`[Clutch] The ${name} scope was read outside its Provider. Render the Provider returned by createMachineScope above this component.`,
 			)
 		}
 
@@ -233,7 +233,7 @@ export function createMachineScope<M>(factory: () => M, name = 'Machine'): Machi
 export function useMachineHistory<T extends object>(machine: Machine<T> & HistoryApi) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => machine.subscribe(onStoreChange),
-		[machine]
+		[machine],
 	)
 
 	const getSnapshot = useCallback(() => machine.getHistoryInfo(), [machine])
@@ -249,7 +249,7 @@ export function useMachineHistory<T extends object>(machine: Machine<T> & Histor
 export function useHydration<T extends object>(machine: Machine<T> & PersistApi) {
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => machine.subscribe(onStoreChange),
-		[machine]
+		[machine],
 	)
 
 	const getSnapshot = useCallback(() => machine.isHydrated(), [machine])
@@ -270,7 +270,7 @@ export function useAutosave<T extends object>(machine: Machine<T> & AutosaveApi)
 	const [loadError, setLoadError] = useState<string | null>(null)
 	const subscribe = useCallback(
 		(onStoreChange: () => void) => machine.subscribe(onStoreChange),
-		[machine]
+		[machine],
 	)
 
 	const getSnapshot = useCallback(() => machine.hasUnsavedChanges(), [machine])

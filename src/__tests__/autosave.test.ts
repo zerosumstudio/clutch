@@ -29,7 +29,7 @@ describe('plugins/autosave', () => {
 		it('marks dirty on commit, saves the current state, then resets', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			expect(machine.hasUnsavedChanges()).toBe(false)
@@ -48,7 +48,7 @@ describe('plugins/autosave', () => {
 		it('skips the save call when nothing changed', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			await machine.forceSave()
@@ -91,7 +91,7 @@ describe('plugins/autosave', () => {
 			expect(machine.hasUnsavedChanges()).toBe(true)
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ code: 'PERSISTENCE_ERROR' }),
-				'persist'
+				'persist',
 			)
 		})
 	})
@@ -100,7 +100,7 @@ describe('plugins/autosave', () => {
 		it('saves automatically when dirty', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			machine.mutate(draft => {
@@ -116,7 +116,7 @@ describe('plugins/autosave', () => {
 		it('does nothing on ticks while clean', async () => {
 			const save = vi.fn()
 			createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			await vi.advanceTimersByTimeAsync(INTERVAL * 3)
@@ -146,7 +146,7 @@ describe('plugins/autosave', () => {
 		it('setAutoSaveInterval restarts the timer with the new cadence', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			machine.setAutoSaveInterval(INTERVAL * 10)
@@ -163,7 +163,7 @@ describe('plugins/autosave', () => {
 
 		it('rejects a non-positive interval update', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save: () => {}, intervalMs: INTERVAL })
+				autosave<TestState>({ save: () => {}, intervalMs: INTERVAL }),
 			)
 
 			expect(() => machine.setAutoSaveInterval(0)).toThrow('positive')
@@ -172,7 +172,7 @@ describe('plugins/autosave', () => {
 		it('stops saving after destroy', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save, intervalMs: INTERVAL })
+				autosave<TestState>({ save, intervalMs: INTERVAL }),
 			)
 
 			machine.mutate(draft => {
@@ -195,7 +195,7 @@ describe('plugins/autosave', () => {
 						save: () => {},
 						load: () => ({ count: 99 }),
 						intervalMs: INTERVAL,
-					})
+					}),
 				)
 
 			machine.mutate(draft => {
@@ -212,7 +212,7 @@ describe('plugins/autosave', () => {
 
 		it('returns false when the server has nothing', async () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save: () => {}, load: () => null, intervalMs: INTERVAL })
+				autosave<TestState>({ save: () => {}, load: () => null, intervalMs: INTERVAL }),
 			)
 
 			await expect(machine.loadFromServer()).resolves.toBe(false)
@@ -221,7 +221,7 @@ describe('plugins/autosave', () => {
 
 		it('returns false when no load function is configured', async () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save: () => {}, intervalMs: INTERVAL })
+				autosave<TestState>({ save: () => {}, intervalMs: INTERVAL }),
 			)
 
 			await expect(machine.loadFromServer()).resolves.toBe(false)
@@ -238,13 +238,13 @@ describe('plugins/autosave', () => {
 							throw new Error('offline')
 						},
 						intervalMs: INTERVAL,
-					})
+					}),
 				)
 
 			await expect(machine.loadFromServer()).resolves.toBe(false)
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: 'offline' }),
-				'persist'
+				'persist',
 			)
 		})
 	})

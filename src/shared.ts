@@ -42,7 +42,7 @@ function registry(): Record<string, SharedEntry> {
 export function sharedMachine<M>(
 	key: string,
 	factory: () => M,
-	options: SharedMachineOptions = {}
+	options: SharedMachineOptions = {},
 ): M {
 	const entries = registry()
 	const existing = entries[key]
@@ -50,7 +50,7 @@ export function sharedMachine<M>(
 	if (existing) {
 		if (existing.clutchVersion !== CLUTCH_VERSION) {
 			console.warn(
-				`[Clutch] Shared machine "${key}" was created by clutch ${existing.clutchVersion}, but this bundle ships clutch ${CLUTCH_VERSION}. Align clutch versions across your apps, or share clutch as a singleton in your module federation config.`
+				`[Clutch] Shared machine "${key}" was created by clutch ${existing.clutchVersion}, but this bundle ships clutch ${CLUTCH_VERSION}. Align clutch versions across your apps, or share clutch as a singleton in your module federation config.`,
 			)
 		}
 		reconcile(key, existing, options)
@@ -77,7 +77,7 @@ function reconcile(key: string, existing: SharedEntry, options: SharedMachineOpt
 			migrateUp(key, existing, options)
 		} else if (options.version < existing.version) {
 			console.warn(
-				`[Clutch] Shared machine "${key}": this app expects version ${options.version}, but the shared state is already at version ${existing.version}. It cannot migrate down and may misread the newer shape.`
+				`[Clutch] Shared machine "${key}": this app expects version ${options.version}, but the shared state is already at version ${existing.version}. It cannot migrate down and may misread the newer shape.`,
 			)
 		}
 		return
@@ -85,7 +85,7 @@ function reconcile(key: string, existing: SharedEntry, options: SharedMachineOpt
 
 	if (options.contract !== undefined && existing.contract !== options.contract) {
 		console.warn(
-			`[Clutch] Shared machine "${key}" contract mismatch: it was created with contract ${String(existing.contract)}, but this app was built against contract ${String(options.contract)}. One of your apps is deployed against a different state shape.`
+			`[Clutch] Shared machine "${key}" contract mismatch: it was created with contract ${String(existing.contract)}, but this app was built against contract ${String(options.contract)}. One of your apps is deployed against a different state shape.`,
 		)
 	}
 }
@@ -95,7 +95,7 @@ function migrateUp(key: string, existing: SharedEntry, options: SharedMachineOpt
 
 	if (!options.migrate) {
 		console.warn(
-			`[Clutch] Shared machine "${key}": a version ${options.version} app joined, but the shared state is version ${from} and no migrate() was provided. It stays on the old shape.`
+			`[Clutch] Shared machine "${key}": a version ${options.version} app joined, but the shared state is version ${from} and no migrate() was provided. It stays on the old shape.`,
 		)
 		return
 	}
@@ -115,7 +115,7 @@ function migrateUp(key: string, existing: SharedEntry, options: SharedMachineOpt
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		console.warn(
-			`[Clutch] Shared machine "${key}": migrate() from version ${from} to ${options.version} failed; the shared state is unchanged. ${reason}`
+			`[Clutch] Shared machine "${key}": migrate() from version ${from} to ${options.version} failed; the shared state is unchanged. ${reason}`,
 		)
 	}
 }

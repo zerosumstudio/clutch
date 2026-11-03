@@ -16,7 +16,7 @@ export interface StandardSchemaV1<Output = unknown> {
 		readonly version: 1
 		readonly vendor: string
 		readonly validate: (
-			value: unknown
+			value: unknown,
 		) => StandardResult<Output> | Promise<StandardResult<Output>>
 	}
 }
@@ -42,7 +42,7 @@ export function checkSchema<T>(schema: StandardSchemaV1<T>, value: unknown): tru
 	if (result instanceof Promise) {
 		throw new MachineError(
 			'Async schema validation is not supported; state updates are synchronous',
-			'VALIDATION_ERROR'
+			'VALIDATION_ERROR',
 		)
 	}
 	if (result.issues) {

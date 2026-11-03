@@ -95,7 +95,7 @@ describe('react', () => {
 			const machine = createMachine({ initialState: initialState() })
 			const { result, rerender } = renderHook(
 				({ key }: { key: 'count' | 'name' }) => useSlice(machine, state => state[key]),
-				{ initialProps: { key: 'count' as const } }
+				{ initialProps: { key: 'count' as const } },
 			)
 
 			expect(result.current).toBe(0)
@@ -114,7 +114,7 @@ describe('react', () => {
 				return useSlice(
 					machine,
 					state => ({ count: state.count }),
-					(a, b) => a.count === b.count
+					(a, b) => a.count === b.count,
 				)
 			})
 
@@ -229,7 +229,7 @@ describe('react', () => {
 	describe('useMachineHistory', () => {
 		it('tracks history info and drives undo/redo', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>()
+				history<TestState>(),
 			)
 			const { result } = renderHook(() => useMachineHistory(machine))
 
@@ -265,11 +265,11 @@ describe('react', () => {
 			const storage = createMemoryStorage()
 			storage.store.set(
 				'react-test',
-				JSON.stringify({ state: { count: 42 }, timestamp: Date.now() })
+				JSON.stringify({ state: { count: 42 }, timestamp: Date.now() }),
 			)
 
 			const machine = createMachine({ initialState: initialState() }).with(
-				persist<TestState>({ key: 'react-test', storage, deferred: true })
+				persist<TestState>({ key: 'react-test', storage, deferred: true }),
 			)
 
 			expect(machine.isHydrated()).toBe(false)
@@ -285,7 +285,7 @@ describe('react', () => {
 		it('saves, tracks lastSaved and clears the unsaved flag', async () => {
 			const save = vi.fn()
 			const machine = createMachine({ initialState: initialState() }).with(
-				autosave<TestState>({ save })
+				autosave<TestState>({ save }),
 			)
 			const { result } = renderHook(() => useAutosave(machine))
 
@@ -314,7 +314,7 @@ describe('react', () => {
 					save: () => {
 						throw new Error('server down')
 					},
-				})
+				}),
 			)
 			const { result } = renderHook(() => useAutosave(machine))
 
@@ -342,7 +342,7 @@ describe('react', () => {
 				autosave<TestState>({
 					save: () => {},
 					load: () => ({ count: 99, name: 'server' }),
-				})
+				}),
 			)
 			const { result } = renderHook(() => useAutosave(machine))
 
@@ -361,7 +361,7 @@ describe('react', () => {
 		const wrapperFor =
 			(
 				Provider: ReturnType<typeof createMachineScope>['Provider'],
-				state?: Partial<TestState>
+				state?: Partial<TestState>,
 			) =>
 			({ children }: { children: ReactNode }) =>
 				createElement(Provider, { state, children })
@@ -380,7 +380,7 @@ describe('react', () => {
 			const onError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
 			expect(() => renderHook(() => useScopedMachine())).toThrow(
-				/User scope was read outside/
+				/User scope was read outside/,
 			)
 
 			onError.mockRestore()
@@ -414,7 +414,7 @@ describe('react', () => {
 					seen.push(machine.getState().count)
 					return machine
 				},
-				{ wrapper: wrapperFor(Provider, { count: 7 }) }
+				{ wrapper: wrapperFor(Provider, { count: 7 }) },
 			)
 
 			expect(seen[0]).toBe(7)

@@ -111,7 +111,7 @@ describe('plugins/sync', () => {
 
 	it('broadcasts patches when the merge strategy is patches', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			sync<TestState>({ transport, mergeStrategy: 'patches' })
+			sync<TestState>({ transport, mergeStrategy: 'patches' }),
 		)
 
 		machine.mutate(draft => {
@@ -127,7 +127,7 @@ describe('plugins/sync', () => {
 
 	it('accumulates patches from rapid mutations within the debounce window', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			sync<TestState>({ transport, mergeStrategy: 'patches' })
+			sync<TestState>({ transport, mergeStrategy: 'patches' }),
 		)
 
 		machine.mutate(draft => {
@@ -169,7 +169,7 @@ describe('plugins/sync', () => {
 			remoteMessage({
 				type: 'state_update',
 				state: { count: 9, name: 'remote' },
-			})
+			}),
 		)
 
 		expect(machine.getState()).toEqual({ count: 9, name: 'remote' })
@@ -190,7 +190,7 @@ describe('plugins/sync', () => {
 			remoteMessage({
 				type: 'patches',
 				patches: [{ op: 'replace', path: ['name'], value: 'remote' }],
-			})
+			}),
 		)
 
 		expect(machine.getState().name).toBe('remote')
@@ -205,7 +205,7 @@ describe('plugins/sync', () => {
 			remoteMessage({
 				type: 'state_update',
 				state: { count: 9, name: 'remote' },
-			})
+			}),
 		)
 
 		vi.advanceTimersByTime(100)
@@ -269,7 +269,7 @@ describe('plugins/sync', () => {
 			remoteMessage({
 				type: 'state_update',
 				state: JSON.parse('{"count":5,"__proto__":{"polluted":true}}'),
-			})
+			}),
 		)
 
 		expect(machine.getState().count).toBe(0)
@@ -283,7 +283,7 @@ describe('plugins/sync', () => {
 			remoteMessage({
 				type: 'state_update',
 				state: { count: 3, name: 'docs about __proto__ and constructor' },
-			})
+			}),
 		)
 
 		expect(machine.getState()).toEqual({
@@ -305,7 +305,7 @@ describe('plugins/sync', () => {
 						value: JSON.parse('{"__proto__":{"polluted":true}}'),
 					},
 				],
-			})
+			}),
 		)
 
 		expect(machine.getState().name).toBe('test')
@@ -320,7 +320,7 @@ describe('plugins/sync', () => {
 				type: 'state_update',
 				state: { count: 7, name: 'slow-clock' },
 				timestamp: Date.now() - 2 * 60 * 1000,
-			})
+			}),
 		)
 
 		expect(machine.getState().count).toBe(7)
@@ -328,7 +328,7 @@ describe('plugins/sync', () => {
 
 	it('ignores messages outside the configured clock-skew tolerance', () => {
 		const machine = createMachine({ initialState: initialState() }).with(
-			sync<TestState>({ transport, maxClockSkewMs: 1000 })
+			sync<TestState>({ transport, maxClockSkewMs: 1000 }),
 		)
 
 		transport.receive(
@@ -336,7 +336,7 @@ describe('plugins/sync', () => {
 				type: 'state_update',
 				state: { count: 7, name: 'skewed' },
 				timestamp: Date.now() - 5000,
-			})
+			}),
 		)
 
 		expect(machine.getState().count).toBe(0)
@@ -367,7 +367,7 @@ describe('plugins/sync', () => {
 			const { machine } = schemaSetup()
 
 			transport.receive(
-				remoteMessage({ type: 'state_update', state: { count: 5, name: 'ok' } })
+				remoteMessage({ type: 'state_update', state: { count: 5, name: 'ok' } }),
 			)
 
 			expect(machine.getState()).toEqual({ count: 5, name: 'ok' })
@@ -380,13 +380,13 @@ describe('plugins/sync', () => {
 				remoteMessage({
 					type: 'state_update',
 					state: { count: 'nope' } as unknown as TestState,
-				})
+				}),
 			)
 
 			expect(machine.getState()).toEqual(initialState())
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: expect.stringContaining('failed the schema') }),
-				'sync'
+				'sync',
 			)
 		})
 
@@ -404,13 +404,13 @@ describe('plugins/sync', () => {
 				.with(sync<TestState>({ transport, schema: asyncSchema }))
 
 			transport.receive(
-				remoteMessage({ type: 'state_update', state: { count: 9, name: 'y' } })
+				remoteMessage({ type: 'state_update', state: { count: 9, name: 'y' } }),
 			)
 
 			expect(machine.getState()).toEqual(initialState())
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: expect.stringContaining('Async schema') }),
-				'sync'
+				'sync',
 			)
 		})
 	})
@@ -418,7 +418,7 @@ describe('plugins/sync', () => {
 	describe('autoStart: false', () => {
 		it('stays idle until startSync() is called', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				sync<TestState>({ transport, autoStart: false })
+				sync<TestState>({ transport, autoStart: false }),
 			)
 
 			machine.mutate(draft => {
@@ -437,7 +437,7 @@ describe('plugins/sync', () => {
 
 		it('startSync() is idempotent', () => {
 			const machine = createMachine({ initialState: initialState() }).with(
-				sync<TestState>({ transport, autoStart: false })
+				sync<TestState>({ transport, autoStart: false }),
 			)
 
 			machine.startSync()
