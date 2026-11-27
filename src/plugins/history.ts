@@ -1,25 +1,26 @@
 /*
  *   IMPORTS
  ***************************************************************************************************/
-import type { Patch } from 'immer'
-import { MachineError, type Plugin, type PluginContext, type ExternalStateMeta } from '../core'
+import type { Plugin, PluginContext } from '../core'
+import { StoreError, toStoreError } from '../error'
+import type { Patch } from '../patch'
 
 /*
  *   TYPES
  ***************************************************************************************************/
-export interface HistorySnapshot {
+interface HistorySnapshot {
 	patches: Patch[]
 	inversePatches: Patch[]
 	timestamp: number
-	description?: string
+	description?: string | undefined
 }
 
 export interface HistoryInfo {
 	canUndo: boolean
 	canRedo: boolean
-	historyLength: number
+	length: number
 	currentIndex: number
-	lastAction: string | null
+	lastDescription: string | null
 }
 
 export interface HistoryApi {
@@ -44,8 +45,8 @@ const DEFAULT_MAX_SIZE = 50
 export function history<T extends object>(config: HistoryConfig = {}): Plugin<T, HistoryApi> {
 	const maxSize = config.maxSize ?? DEFAULT_MAX_SIZE
 
-	if (maxSize <= 0) {
-		throw new MachineError('History maxSize must be positive', 'VALIDATION_ERROR')
+	if (!Number.isInteger(maxSize) || maxSize <= 0) {
+		throw new StoreError('History maxSize must be a positive integer', 'INVALID_ARGUMENT')
 	}
 
 	let ctx: PluginContext<T> | null = null
@@ -53,72 +54,67 @@ export function history<T extends object>(config: HistoryConfig = {}): Plugin<T,
 	let index = -1
 	let infoCache: HistoryInfo | null = null
 
-	const reset = (): void => {
+	const clearStack = (): void => {
 		snapshots = []
 		index = -1
 		infoCache = null
 	}
 
+	const clearHistory = (): void => {
+		clearStack()
+		ctx?.notify()
+	}
+
 	const canUndo = (): boolean => index >= 0
 	const canRedo = (): boolean => index < snapshots.length - 1
 
-	const undo = (): boolean => {
-		if (!ctx || !canUndo()) {
+	// Remote patches make the stack stale once they touch a top-level key it recorded
+	const isStaleAfter = (remote: Patch[]): boolean => {
+		const touched = new Set<string>()
+
+		for (const snapshot of snapshots) {
+			for (const patch of snapshot.patches) {
+				touched.add(String(patch.path[0]))
+			}
+		}
+
+		return remote.some(patch => patch.path.length === 0 || touched.has(String(patch.path[0])))
+	}
+
+	const step = (patches: (snapshot: HistorySnapshot) => Patch[], delta: 1 | -1): boolean => {
+		const target = delta === -1 ? index : index + 1
+		const snapshot = snapshots[target]
+
+		if (!ctx || !snapshot) {
 			return false
 		}
 
-		const snapshot = snapshots[index]
-		if (!snapshot) {
-			return false
-		}
-
-		// We move the cursor before applying so listeners are notified during the
-		// apply and read the new position. Don't revert if the apply throws
-		index--
+		// Move the cursor before applying so listeners read the new position. A failed apply
+		// puts it back
+		index += delta
 		infoCache = null
 
 		try {
-			const meta: Omit<ExternalStateMeta, 'patches'> = { source: HISTORY_SOURCE }
-			if (snapshot.description) {
-				meta.description = snapshot.description
-			}
-			ctx.applyPatches(snapshot.inversePatches, meta)
+			ctx.applyPatches(patches(snapshot), {
+				source: HISTORY_SOURCE,
+				description: snapshot.description,
+			})
+
 			return true
 		} catch (error) {
-			index++
+			index -= delta
 			infoCache = null
-			ctx.emitError(error instanceof Error ? error : new Error(String(error)), 'undo')
+			ctx.emitError(
+				toStoreError(error, 'PLUGIN_FAILED', delta === -1 ? 'Undo failed' : 'Redo failed'),
+				delta === -1 ? 'undo' : 'redo',
+			)
+
 			return false
 		}
 	}
 
-	const redo = (): boolean => {
-		if (!ctx || !canRedo()) {
-			return false
-		}
-
-		const snapshot = snapshots[index + 1]
-		if (!snapshot) {
-			return false
-		}
-
-		index++
-		infoCache = null
-
-		try {
-			const meta: Omit<ExternalStateMeta, 'patches'> = { source: HISTORY_SOURCE }
-			if (snapshot.description) {
-				meta.description = snapshot.description
-			}
-			ctx.applyPatches(snapshot.patches, meta)
-			return true
-		} catch (error) {
-			index--
-			infoCache = null
-			ctx.emitError(error instanceof Error ? error : new Error(String(error)), 'redo')
-			return false
-		}
-	}
+	const undo = (): boolean => step(snapshot => snapshot.inversePatches, -1)
+	const redo = (): boolean => step(snapshot => snapshot.patches, 1)
 
 	const getHistoryInfo = (): HistoryInfo => {
 		// Keep referentially stable between history changes, since
@@ -127,11 +123,12 @@ export function history<T extends object>(config: HistoryConfig = {}): Plugin<T,
 			infoCache = {
 				canUndo: canUndo(),
 				canRedo: canRedo(),
-				historyLength: snapshots.length,
+				length: snapshots.length,
 				currentIndex: index,
-				lastAction: snapshots[index]?.description ?? null,
+				lastDescription: snapshots[index]?.description ?? null,
 			}
 		}
+
 		return infoCache
 	}
 
@@ -140,14 +137,8 @@ export function history<T extends object>(config: HistoryConfig = {}): Plugin<T,
 
 		onInit(context) {
 			ctx = context
-			return {
-				undo,
-				redo,
-				canUndo,
-				canRedo,
-				getHistoryInfo,
-				clearHistory: reset,
-			}
+
+			return { undo, redo, canUndo, canRedo, getHistoryInfo, clearHistory }
 		},
 
 		onCommit(payload) {
@@ -155,17 +146,12 @@ export function history<T extends object>(config: HistoryConfig = {}): Plugin<T,
 				snapshots = snapshots.slice(0, index + 1)
 			}
 
-			const snapshot: HistorySnapshot = {
+			snapshots.push({
 				patches: payload.patches,
 				inversePatches: payload.inversePatches,
 				timestamp: payload.timestamp,
-			}
-
-			if (payload.description) {
-				snapshot.description = payload.description
-			}
-
-			snapshots.push(snapshot)
+				description: payload.description,
+			})
 			index++
 
 			if (snapshots.length > maxSize) {
@@ -177,15 +163,15 @@ export function history<T extends object>(config: HistoryConfig = {}): Plugin<T,
 		},
 
 		onExternalState(_state, meta) {
-			// A full-state replacement (time travel, hydration) makes our patches
-			// stale, so drop them. Patch-level updates like sync keep history usable.
-			if (!meta.patches) {
-				reset()
+			// A full replacement (hydration, reset, time travel) makes the patches stale. Patch-level
+			// updates only do when they touch keys the stack recorded
+			if (!meta.patches || isStaleAfter(meta.patches)) {
+				clearStack()
 			}
 		},
 
 		onDestroy() {
-			reset()
+			clearStack()
 			ctx = null
 		},
 	}

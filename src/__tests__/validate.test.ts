@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createMachine, MachineError, type PluginContext } from '../core'
-import { validate, type StandardSchemaV1 } from '../plugins/validate'
+import { createStore, type PluginContext } from '../core'
+import { StoreError } from '../error'
+import type { StandardSchemaV1 } from '../plugins/standard-schema'
+import { validate } from '../plugins/validate'
+import { immer } from '../immer'
 
 interface TestState {
 	count: number
@@ -27,61 +30,55 @@ function nonNegativeCountSchema(options: { async?: boolean } = {}): StandardSche
 
 describe('plugins/validate', () => {
 	it('requires a validator function', () => {
-		expect(() => validate(null as unknown as () => boolean)).toThrow(MachineError)
+		expect(() => validate(null as unknown as () => boolean)).toThrow(StoreError)
 	})
 
 	it('vetoes commits that fail validation', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0),
-		)
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(validate<TestState>(state => state.count >= 0))
 		const listener = vi.fn()
-		machine.subscribe(listener)
+		store.subscribe(listener)
 
 		expect(() =>
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = -1
 			}),
 		).toThrow('State validation failed')
 
-		expect(machine.getState().count).toBe(0)
+		expect(store.getState().count).toBe(0)
 		expect(listener).not.toHaveBeenCalled()
 	})
 
 	it('lets valid commits through', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0),
-		)
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(validate<TestState>(state => state.count >= 0))
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 5
 		})
 
-		expect(machine.getState().count).toBe(5)
+		expect(store.getState().count).toBe(5)
 	})
 
-	it('vetoes invalid batches', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
+	it('vetoes an invalid set', () => {
+		const store = createStore({ initialState: initialState() }).with(
 			validate<TestState>(state => state.count >= 0),
 		)
 
-		expect(() =>
-			machine.batch([
-				draft => {
-					draft.count = 1
-				},
-				draft => {
-					draft.count = -5
-				},
-			]),
-		).toThrow('State validation failed')
+		expect(() => store.set(state => ({ count: state.count - 5 }))).toThrow(
+			'State validation failed',
+		)
 
-		expect(machine.getState().count).toBe(0)
+		expect(store.getState().count).toBe(0)
 	})
 
 	it('reports invalid external states without reverting them', () => {
 		const onError = vi.fn()
 		let capturedCtx!: PluginContext<TestState>
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
 			.with({ name: 'errors', onError })
 			.with({
 				name: 'sync',
@@ -93,7 +90,7 @@ describe('plugins/validate', () => {
 
 		capturedCtx.replaceState({ count: -7 }, { source: 'sync' })
 
-		expect(machine.getState().count).toBe(-7)
+		expect(store.getState().count).toBe(-7)
 		expect(onError).toHaveBeenCalledWith(
 			expect.objectContaining({
 				message: 'State validation failed for external update from "sync"',
@@ -105,7 +102,8 @@ describe('plugins/validate', () => {
 	it('stays quiet for valid external states', () => {
 		const onError = vi.fn()
 		let capturedCtx!: PluginContext<TestState>
-		createMachine({ initialState: initialState() })
+		createStore({ initialState: initialState() })
+			.with(immer())
 			.with({ name: 'errors', onError })
 			.with({
 				name: 'sync',
@@ -121,25 +119,29 @@ describe('plugins/validate', () => {
 	})
 
 	it('uses a returned string as the rejection message', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => (state.count >= 0 ? true : 'count must not go negative')),
-		)
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(
+				validate<TestState>(state =>
+					state.count >= 0 ? true : 'count must not go negative',
+				),
+			)
 
 		expect(() =>
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = -1
 			}),
 		).toThrow('count must not go negative')
-		expect(machine.getState().count).toBe(0)
+		expect(store.getState().count).toBe(0)
 	})
 
 	it('keeps the generic message for a plain false', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate<TestState>(state => state.count >= 0),
-		)
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(validate<TestState>(state => state.count >= 0))
 
 		expect(() =>
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = -1
 			}),
 		).toThrow('State validation failed')
@@ -149,27 +151,28 @@ describe('plugins/validate', () => {
 	 *   STANDARD SCHEMA
 	 ***************************************************************************************************/
 	it('accepts a Standard Schema and vetoes commits that violate it', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate(nonNegativeCountSchema()),
-		)
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(validate(nonNegativeCountSchema()))
 
 		expect(() =>
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = -1
 			}),
-		).toThrow('count must be a non-negative number')
-		expect(machine.getState().count).toBe(0)
+		).toThrow('State validation failed: 1 issue at (root)')
+		expect(store.getState().count).toBe(0)
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 3
 		})
-		expect(machine.getState().count).toBe(3)
+		expect(store.getState().count).toBe(3)
 	})
 
 	it('reports schema failures on external state', () => {
 		const onError = vi.fn()
 		let capturedCtx!: PluginContext<TestState>
-		createMachine({ initialState: initialState() })
+		createStore({ initialState: initialState() })
+			.with(immer())
 			.with({ name: 'errors', onError })
 			.with({
 				name: 'sync',
@@ -183,25 +186,43 @@ describe('plugins/validate', () => {
 
 		expect(onError).toHaveBeenCalledWith(
 			expect.objectContaining({
-				message: expect.stringContaining('count must be a non-negative'),
+				message: expect.stringContaining('1 issue at (root)'),
 			}),
 			'validate',
 		)
 	})
 
-	it('rejects an async schema, since commits are synchronous', () => {
-		const machine = createMachine({ initialState: initialState() }).with(
-			validate(nonNegativeCountSchema({ async: true })),
+	it('keeps schema issue text out of the message and on the cause', () => {
+		const store = createStore({ initialState: initialState() }).with(
+			validate(nonNegativeCountSchema()),
 		)
 
+		let caught: unknown
+		try {
+			store.set({ count: -1 })
+		} catch (error) {
+			caught = error
+		}
+
+		expect((caught as Error).message).not.toContain('non-negative')
+		expect((caught as Error).cause).toEqual([
+			expect.objectContaining({ message: 'count must be a non-negative number' }),
+		])
+	})
+
+	it('rejects an async schema, since commits are synchronous', () => {
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(validate(nonNegativeCountSchema({ async: true })))
+
 		expect(() =>
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 1
 			}),
 		).toThrow('Async schema validation is not supported')
 	})
 
 	it('rejects a validator that is neither a function nor a schema', () => {
-		expect(() => validate({} as unknown as () => boolean)).toThrow(MachineError)
+		expect(() => validate({} as unknown as () => boolean)).toThrow(StoreError)
 	})
 })

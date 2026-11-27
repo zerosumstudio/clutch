@@ -1,15 +1,17 @@
 /*
  *   IMPORTS
  ***************************************************************************************************/
-import { MachineError, type Plugin, type PluginContext } from '../core'
-import { checkSchema, isStandardSchema, type StandardSchemaV1 } from './standard-schema'
+import type { Plugin, PluginContext } from '../core'
+import { StoreError } from '../error'
+import { isStandardSchema, parseSchema, type StandardSchemaV1 } from './standard-schema'
 
 /*
  *   TYPES
  ***************************************************************************************************/
 export type StateValidator<T> = (state: T) => boolean | string
 
-export type { StandardSchemaV1 }
+// What a failed check says, without the "State validation failed" every error starts with
+type Check<T> = (state: T) => true | { detail: string | undefined; cause?: unknown }
 
 const VALIDATE_SOURCE = 'validate'
 
@@ -19,7 +21,7 @@ const VALIDATE_SOURCE = 'validate'
 export function validate<T extends object>(
 	validator: StateValidator<T> | StandardSchemaV1<T>,
 ): Plugin<T> {
-	const check = toValidator(validator)
+	const check = toCheck(validator)
 
 	let ctx: PluginContext<T> | null = null
 
@@ -32,26 +34,35 @@ export function validate<T extends object>(
 
 		onBeforeCommit(payload) {
 			const result = check(payload.state)
-			if (typeof result === 'string') {
-				throw new MachineError(result || 'State validation failed', 'VALIDATION_ERROR')
-			}
-			if (!result) {
-				throw new MachineError('State validation failed', 'VALIDATION_ERROR')
+
+			if (result !== true) {
+				throw new StoreError(
+					describeFailure('State validation failed', result.detail),
+					'VALIDATION_FAILED',
+					{
+						cause: result.cause,
+					},
+				)
 			}
 		},
 
 		onExternalState(state, meta) {
 			const result = check(state)
-			if (typeof result !== 'string' && result) {
+
+			if (result === true) {
 				return
 			}
-			const detail = typeof result === 'string' && result ? `: ${result}` : ''
+
 			ctx?.emitError(
-				new MachineError(
-					`State validation failed for external update from "${meta.source}"${detail}`,
-					'VALIDATION_ERROR',
+				new StoreError(
+					describeFailure(
+						`State validation failed for external update from "${meta.source}"`,
+						result.detail,
+					),
+					'VALIDATION_FAILED',
+					{ cause: result.cause },
 				),
-				'validate',
+				VALIDATE_SOURCE,
 			)
 		},
 
@@ -64,15 +75,31 @@ export function validate<T extends object>(
 /*
  *   HELPERS
  ***************************************************************************************************/
-/** Normalizes a Standard Schema into the predicate the plugin already speaks. */
-function toValidator<T extends object>(
-	validator: StateValidator<T> | StandardSchemaV1<T>,
-): StateValidator<T> {
+function describeFailure(summary: string, detail: string | undefined): string {
+	return detail ? `${summary}: ${detail}` : summary
+}
+
+/** Normalizes a function or a Standard Schema into one check. */
+function toCheck<T extends object>(validator: StateValidator<T> | StandardSchemaV1<T>): Check<T> {
 	if (isStandardSchema<T>(validator)) {
-		return state => checkSchema(validator, state)
+		return state => {
+			const result = parseSchema(validator, state)
+
+			return result.ok ? true : { detail: result.message, cause: result.issues }
+		}
 	}
+
 	if (typeof validator === 'function') {
-		return validator
+		return state => {
+			const result = validator(state)
+
+			if (typeof result === 'string') {
+				return { detail: result || undefined }
+			}
+
+			return result ? true : { detail: undefined }
+		}
 	}
-	throw new MachineError('Validator must be a function or a Standard Schema', 'VALIDATION_ERROR')
+
+	throw new StoreError('Validator must be a function or a Standard Schema', 'INVALID_ARGUMENT')
 }
