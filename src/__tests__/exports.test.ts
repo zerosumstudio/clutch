@@ -1,21 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { createMachine, validate, type MachineConfig, type StandardSchemaV1 } from '../index'
+import { createStore, validate, type StoreConfig, type StandardSchemaV1 } from '../index'
 
 describe('Package Exports', () => {
 	describe('Main entry', () => {
-		it('exports the machine core', async () => {
+		it('exports the store factory, errors and helpers', async () => {
 			const main = await import('../index')
 
-			expect(main.Machine).toBeDefined()
-			expect(main.createMachine).toBeDefined()
-			expect(main.MachineError).toBeDefined()
+			expect(main.createStore).toBeDefined()
+			expect(main.StoreError).toBeDefined()
+			expect(main.shallowEqual).toBeDefined()
+			expect(main.sharedStore).toBeDefined()
 		})
 
-		it('exports the registry', async () => {
+		it('exports the registry factory only, not the classes', async () => {
 			const main = await import('../index')
 
-			expect(main.Registry).toBeDefined()
 			expect(main.createRegistry).toBeDefined()
+			expect((main as Record<string, unknown>).Registry).toBeUndefined()
+			expect((main as Record<string, unknown>).Store).toBeUndefined()
 		})
 
 		it('exports all plugins', async () => {
@@ -29,20 +31,15 @@ describe('Package Exports', () => {
 			expect(main.autosave).toBeDefined()
 		})
 
-		it('does NOT export the removed v2 compat bridge', async () => {
+		it('does not export the transport classes or immer', async () => {
 			const main = await import('../index')
 
-			expect((main as Record<string, unknown>).createV2Machine).toBeUndefined()
-		})
-
-		it('exports the BroadcastChannelTransport', async () => {
-			const main = await import('../index')
-
-			expect(main.BroadcastChannelTransport).toBeDefined()
+			expect((main as Record<string, unknown>).BroadcastChannelTransport).toBeUndefined()
+			expect((main as Record<string, unknown>).immer).toBeUndefined()
 		})
 
 		it('exports core types', async () => {
-			const _typeTest: MachineConfig<{ count: number }> = {
+			const _typeTest: StoreConfig<{ count: number }> = {
 				initialState: { count: 0 },
 			}
 
@@ -58,65 +55,47 @@ describe('Package Exports', () => {
 				},
 			}
 
-			const machine = createMachine({ initialState: { count: 0 } }).with(validate(schema))
+			const store = createStore({ initialState: { count: 0 } }).with(validate(schema))
 
-			expect(machine.getState().count).toBe(0)
+			expect(store.getState().count).toBe(0)
 		})
 
 		it('does NOT export React hooks from the main entry', async () => {
 			const main = await import('../index')
 
-			expect((main as Record<string, unknown>).useMachine).toBeUndefined()
-			expect((main as Record<string, unknown>).useSlice).toBeUndefined()
+			expect((main as Record<string, unknown>).useStore).toBeUndefined()
 		})
 	})
 
 	describe('React entry', () => {
-		it('exports all hooks', async () => {
+		it('exports exactly the hooks and the scope factory', async () => {
 			const react = await import('../react')
 
-			expect(react.useMachine).toBeDefined()
-			expect(react.useSlice).toBeDefined()
-			expect(react.useSubscription).toBeDefined()
-			expect(react.useRegistry).toBeDefined()
-			expect(react.useRegistrySlice).toBeDefined()
-			expect(react.useMachineHistory).toBeDefined()
-			expect(react.useHydration).toBeDefined()
-			expect(react.useAutosave).toBeDefined()
+			expect(Object.keys(react).sort()).toEqual([
+				'createStoreScope',
+				'useAutosave',
+				'useHistory',
+				'useHydration',
+				'useRegistry',
+				'useStore',
+				'useSubscription',
+			])
 		})
+	})
 
-		it('exports the scope factory', async () => {
-			const react = await import('../react')
+	describe('Immer entry', () => {
+		it('exports the immer plugin', async () => {
+			const entry = await import('../immer')
 
-			expect(react.createMachineScope).toBeDefined()
-		})
-
-		it('does NOT export core classes from the React entry', async () => {
-			const react = await import('../react')
-
-			expect((react as Record<string, unknown>).Machine).toBeUndefined()
-			expect((react as Record<string, unknown>).Registry).toBeUndefined()
-		})
-
-		it('has exactly 9 exports', async () => {
-			const react = await import('../react')
-
-			expect(Object.keys(react).length).toBe(9)
+			expect(Object.keys(entry)).toEqual(['immer'])
 		})
 	})
 
 	describe('Sync WS entry', () => {
-		it('exports WebSocketTransport', async () => {
+		it('exports only WebSocketTransport', async () => {
 			const syncWs = await import('../transports/websocket')
 
-			expect(syncWs.WebSocketTransport).toBeDefined()
-		})
-
-		it('does NOT export core classes from the sync-ws entry', async () => {
-			const syncWs = await import('../transports/websocket')
-
-			expect((syncWs as Record<string, unknown>).Machine).toBeUndefined()
-			expect((syncWs as Record<string, unknown>).StateSyncManager).toBeUndefined()
+			expect(Object.keys(syncWs)).toEqual(['WebSocketTransport'])
 		})
 	})
 })

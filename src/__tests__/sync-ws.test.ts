@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { StateSyncManager } from '../sync'
+import { StateSyncManager, type SyncManagerConfig } from '../sync'
+import type { StoreError } from '../error'
 import { WebSocketTransport } from '../transports/websocket'
 import type { SyncTransport, TransportStatus } from '../transports/types'
 
@@ -51,7 +52,7 @@ class MockWebSocket {
 	}
 
 	static last(): MockWebSocket {
-		return MockWebSocket.instances[MockWebSocket.instances.length - 1]
+		return MockWebSocket.instances[MockWebSocket.instances.length - 1]!
 	}
 }
 
@@ -60,7 +61,7 @@ const createTransport = (
 ) =>
 	new WebSocketTransport({
 		url: 'wss://example.test/sync',
-		webSocketCtor: MockWebSocket as any,
+		webSocketCtor: MockWebSocket,
 		...config,
 	})
 
@@ -82,7 +83,11 @@ describe('WebSocketTransport', () => {
 	})
 
 	const startConnected = (config: Record<string, unknown> = {}) => {
-		const transport = createTransport(config)
+		const { onError, ...rest } = config
+		const transport = createTransport(rest)
+		if (typeof onError === 'function') {
+			transport.onError(onError as (error: unknown) => void)
+		}
 		transport.onStatusChange(status => statuses.push(status))
 		transport.start()
 		MockWebSocket.last().dispatch('open')
@@ -157,7 +162,8 @@ describe('WebSocketTransport', () => {
 
 	it('should drop the oldest message on queue overflow and report it', () => {
 		const onError = vi.fn()
-		const transport = createTransport({ maxQueueSize: 2, onError })
+		const transport = createTransport({ maxQueueSize: 2 })
+		transport.onError(onError)
 		transport.start()
 
 		transport.send({ seq: 1 })
@@ -192,11 +198,38 @@ describe('WebSocketTransport', () => {
 		vi.advanceTimersByTime(500)
 		expect(MockWebSocket.instances).toHaveLength(3)
 
-		// Successful open resets the attempt counter
+		// A connection that holds for a while starts the backoff over
 		MockWebSocket.last().dispatch('open')
+		vi.advanceTimersByTime(10_000)
 		MockWebSocket.last().dispatch('close')
 		vi.advanceTimersByTime(500)
 		expect(MockWebSocket.instances).toHaveLength(4)
+
+		transport.destroy()
+	})
+
+	it('should keep backing off when the server accepts and then closes right away', () => {
+		vi.spyOn(Math, 'random').mockReturnValue(1)
+		const transport = startConnected({ reconnect: { baseDelayMs: 100, maxDelayMs: 100_000 } })
+
+		const delays: number[] = []
+
+		for (let attempt = 0; attempt < 5; attempt++) {
+			const before = MockWebSocket.instances.length
+			MockWebSocket.last().dispatch('close')
+
+			let waited = 0
+			while (MockWebSocket.instances.length === before && waited < 100_000) {
+				vi.advanceTimersByTime(50)
+				waited += 50
+			}
+
+			delays.push(waited)
+			MockWebSocket.last().dispatch('open')
+		}
+
+		expect(delays[4]).toBeGreaterThan(delays[1] as number)
+		expect(delays[4]).toBeGreaterThanOrEqual(1600)
 
 		transport.destroy()
 	})
@@ -260,8 +293,11 @@ describe('WebSocketTransport', () => {
 		expect(handler).not.toHaveBeenCalled()
 	})
 
-	it('should append the auth token as a query parameter', async () => {
-		const transport = createTransport({ getAuthToken: async () => 'secret token' })
+	it('should append the auth token as a query parameter when asked to', async () => {
+		const transport = createTransport({
+			getAuthToken: async () => 'secret token',
+			authMode: 'query',
+		})
 		transport.start()
 		await vi.advanceTimersByTimeAsync(0)
 
@@ -269,11 +305,8 @@ describe('WebSocketTransport', () => {
 		transport.destroy()
 	})
 
-	it('should send the auth token as the first frame in message mode', async () => {
-		const transport = createTransport({
-			getAuthToken: () => 'tok',
-			authMode: 'message',
-		})
+	it('should send the auth token as the first frame by default', async () => {
+		const transport = createTransport({ getAuthToken: () => 'tok' })
 		transport.start()
 		transport.send({ seq: 1 })
 		await vi.advanceTimersByTimeAsync(0)
@@ -284,6 +317,116 @@ describe('WebSocketTransport', () => {
 		expect(MockWebSocket.last().sent[0]).toBe(JSON.stringify({ type: 'auth', token: 'tok' }))
 		expect(MockWebSocket.last().sent[1]).toBe(JSON.stringify({ seq: 1 }))
 		transport.destroy()
+	})
+
+	it('should hand transport errors to the sync manager handler as errors, never as raw events, and not log them', () => {
+		const consoleError = vi.spyOn(console, 'error')
+		const transport = createTransport()
+		const handler = vi.fn()
+		transport.onError(handler)
+		transport.start()
+
+		MockWebSocket.last().dispatch('error', { type: 'error' })
+
+		expect(handler).toHaveBeenCalledWith(expect.any(Error))
+		expect(consoleError).not.toHaveBeenCalled()
+	})
+
+	it('should stay silent about socket events after destroy', () => {
+		const onError = vi.fn()
+		const transport = createTransport()
+		transport.onError(onError)
+		transport.start()
+		const socket = MockWebSocket.last()
+
+		transport.destroy()
+		socket.dispatch('error', { type: 'error' })
+
+		expect(onError).not.toHaveBeenCalled()
+	})
+
+	it('should drop queued frames when the next connection uses a different token', async () => {
+		let token = 'alice'
+		const transport = createTransport({
+			getAuthToken: () => token,
+			reconnect: { baseDelayMs: 10, maxDelayMs: 10 },
+		})
+		transport.start()
+		await vi.advanceTimersByTimeAsync(0)
+		MockWebSocket.last().dispatch('open')
+		MockWebSocket.last().dispatch('close')
+
+		// Offline: this was written while alice was signed in
+		transport.send({ owner: 'alice' })
+		token = 'bob'
+		await vi.advanceTimersByTimeAsync(20)
+		MockWebSocket.last().dispatch('open')
+
+		const frames = MockWebSocket.last().sent
+		expect(frames[0]).toBe(JSON.stringify({ type: 'auth', token: 'bob' }))
+		expect(frames).not.toContain(JSON.stringify({ owner: 'alice' }))
+		transport.destroy()
+	})
+
+	it('should keep queued frames when the token is the same', async () => {
+		const transport = createTransport({
+			getAuthToken: () => 'alice',
+			reconnect: { baseDelayMs: 10, maxDelayMs: 10 },
+		})
+		transport.start()
+		await vi.advanceTimersByTimeAsync(0)
+		MockWebSocket.last().dispatch('open')
+		MockWebSocket.last().dispatch('close')
+
+		transport.send({ owner: 'alice' })
+		await vi.advanceTimersByTimeAsync(20)
+		MockWebSocket.last().dispatch('open')
+
+		expect(MockWebSocket.last().sent).toContain(JSON.stringify({ owner: 'alice' }))
+		transport.destroy()
+	})
+
+	it('should drop an inbound frame over maxMessageChars before parsing it', () => {
+		const onError = vi.fn()
+		const transport = startConnected({ maxMessageChars: 100, onError })
+		const handler = vi.fn()
+		transport.onMessage(handler)
+
+		MockWebSocket.last().dispatch('message', {
+			data: JSON.stringify({ type: 'state_update', pad: 'x'.repeat(500) }),
+		})
+		MockWebSocket.last().dispatch('message', { data: JSON.stringify({ type: 'full_sync' }) })
+
+		expect(handler).toHaveBeenCalledTimes(1)
+		expect(handler).toHaveBeenCalledWith({ type: 'full_sync' })
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ message: expect.stringContaining('maxMessageChars') }),
+		)
+	})
+
+	it('should report a frame that is not valid JSON, and keep going', () => {
+		const transport = startConnected()
+		const handler = vi.fn()
+		const onError = vi.fn()
+		transport.onMessage(handler)
+		transport.onError(onError)
+
+		MockWebSocket.last().dispatch('message', { data: 'not json{' })
+		MockWebSocket.last().dispatch('message', { data: JSON.stringify({ type: 'full_sync' }) })
+
+		expect(onError).toHaveBeenCalledWith(expect.any(Error))
+		expect(handler).toHaveBeenCalledTimes(1)
+	})
+
+	it('should report once, through the handler, and have no config.onError', () => {
+		const transport = createTransport()
+		const onError = vi.fn()
+		transport.onError(onError)
+		transport.start()
+
+		MockWebSocket.last().dispatch('error', { type: 'error' })
+
+		expect(onError).toHaveBeenCalledTimes(1)
 	})
 
 	it('should be safe to send after destroy', () => {
@@ -306,7 +449,8 @@ describe('StateSyncManager server-version ordering', () => {
 
 	let transport: FakeTransport
 	let currentState: TestState
-	let applied: Array<{ state: TestState; patches?: any[] }>
+	let applied: Array<{ state: TestState; patches: any[] }>
+	let errors: StoreError[]
 	let ownInstanceId: string
 
 	const createFakeTransport = (): FakeTransport => {
@@ -334,26 +478,42 @@ describe('StateSyncManager server-version ordering', () => {
 		}
 	}
 
-	const createManager = (config: Record<string, unknown> = {}) => {
+	const createManager = (config: Partial<SyncManagerConfig<TestState>> = {}) => {
 		const manager = new StateSyncManager<TestState>(
-			{ transport, ...config },
-			() => currentState,
-			(state, patches) => {
-				applied.push({ state, patches })
+			{
+				channel: 'c',
+				mode: 'state',
+				debounceMs: 50,
+				ignoreLocalChanges: false,
+				maxClockSkewMs: 5 * 60 * 1000,
+				pick: undefined,
+				transport,
+				...config,
+			},
+			{
+				getState: () => currentState,
+				applyRemote: (state, patches) => {
+					applied.push({ state, patches })
+
+					return true
+				},
+				onError: error => errors.push(error),
 			},
 		)
+
+		// The first connect sends the initial full sync
+		transport.emitStatus('connected')
 		ownInstanceId = transport.sent[0].instanceId
+
 		return manager
 	}
 
 	const versioned = (version: number, overrides: Record<string, unknown> = {}) => ({
 		type: 'state_update',
+		channel: 'c',
 		instanceId: 'remote_instance',
 		timestamp: Date.now(),
 		state: { count: version, name: 'remote' },
-		patches: undefined,
-		inversePatches: undefined,
-		description: undefined,
 		version,
 		...overrides,
 	})
@@ -364,6 +524,7 @@ describe('StateSyncManager server-version ordering', () => {
 		transport = createFakeTransport()
 		currentState = { count: 0, name: 'test' }
 		applied = []
+		errors = []
 	})
 
 	it('should apply in-order versioned updates', () => {
@@ -383,11 +544,11 @@ describe('StateSyncManager server-version ordering', () => {
 		transport.deliver(versioned(1))
 
 		expect(applied).toHaveLength(1)
-		expect(applied[0].state.count).toBe(2)
+		expect(applied[0]?.state.count).toBe(2)
 	})
 
 	it('should advance the cursor on self-echo without applying', () => {
-		createManager({ mergeStrategy: 'patches' })
+		createManager({ mode: 'patches' })
 
 		transport.deliver(versioned(1, { instanceId: ownInstanceId }))
 		expect(applied).toHaveLength(0)
@@ -402,12 +563,12 @@ describe('StateSyncManager server-version ordering', () => {
 		)
 
 		expect(applied).toHaveLength(1)
-		expect(applied[0].state.count).toBe(5)
+		expect(applied[0]?.state.count).toBe(5)
 		expect(fullSyncRequests()).toHaveLength(1) // only the initial one
 	})
 
 	it('should drop gapped patches and request a resync exactly once', () => {
-		createManager({ mergeStrategy: 'patches' })
+		createManager({ mode: 'patches' })
 
 		transport.deliver(versioned(1))
 		expect(fullSyncRequests()).toHaveLength(1)
@@ -428,7 +589,7 @@ describe('StateSyncManager server-version ordering', () => {
 		// Resync answer (versioned full state) recovers and clears the pending flag
 		transport.deliver(versioned(7))
 		expect(applied).toHaveLength(2)
-		expect(applied[1].state.count).toBe(7)
+		expect(applied[1]?.state.count).toBe(7)
 	})
 
 	it('should apply gapped full-state updates', () => {
@@ -467,10 +628,11 @@ describe('StateSyncManager server-version ordering', () => {
 		createManager()
 
 		transport.deliver(
-			versioned(1, { state: JSON.parse('{"count": 1, "name": "x", "constructor": {}}') }),
+			versioned(1, { state: JSON.parse('{"count": 1, "name": "x", "__proto__": {}}') }),
 		)
 
 		expect(applied).toHaveLength(0)
+		expect(errors[0]?.code).toBe('SYNC_REJECTED')
 	})
 
 	it('should answer full-sync requests regardless of clock skew', () => {
@@ -479,6 +641,7 @@ describe('StateSyncManager server-version ordering', () => {
 
 		transport.deliver({
 			type: 'full_sync',
+			channel: 'c',
 			instanceId: 'remote_instance',
 			timestamp: Date.now() - 999999,
 		})
@@ -493,6 +656,7 @@ describe('StateSyncManager server-version ordering', () => {
 
 		transport.deliver({
 			type: 'full_sync',
+			channel: 'c',
 			instanceId: ownInstanceId,
 			timestamp: Date.now(),
 		})

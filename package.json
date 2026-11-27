@@ -1,7 +1,7 @@
 {
 	"name": "@zerosumstudio/clutch",
-	"version": "3.5.0",
-	"description": "A TypeScript-first, plugin-based state manager built on Immer",
+	"version": "1.0.0",
+	"description": "A TypeScript-first, plugin-based state store with optional Immer support",
 	"keywords": [
 		"state-management",
 		"immer",
@@ -26,101 +26,85 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"import": {
-				"types": "./dist/index.d.ts",
-				"default": "./dist/index.js"
-			},
-			"require": {
-				"types": "./dist/index.d.cts",
-				"default": "./dist/index.cjs"
-			}
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
 		},
 		"./react": {
-			"import": {
-				"types": "./dist/react.d.ts",
-				"default": "./dist/react.js"
-			},
-			"require": {
-				"types": "./dist/react.d.cts",
-				"default": "./dist/react.cjs"
-			}
+			"types": "./dist/react.d.ts",
+			"default": "./dist/react.js"
+		},
+		"./immer": {
+			"types": "./dist/immer.d.ts",
+			"default": "./dist/immer.js"
 		},
 		"./sync-ws": {
-			"import": {
-				"types": "./dist/sync-ws.d.ts",
-				"default": "./dist/sync-ws.js"
-			},
-			"require": {
-				"types": "./dist/sync-ws.d.cts",
-				"default": "./dist/sync-ws.cjs"
-			}
+			"types": "./dist/sync-ws.d.ts",
+			"default": "./dist/sync-ws.js"
 		},
 		"./package.json": "./package.json"
 	},
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.js",
+	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"files": [
 		"dist",
-		"README.md",
-		"LICENSE"
+		"docs/sync-protocol.md",
+		"docs/migration-1.0.md"
 	],
 	"scripts": {
-		"build": "tsup",
-		"dev": "tsup --watch",
+		"build": "tsdown",
+		"dev": "tsdown --watch",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"prepublishOnly": "pnpm run verify",
 		"size": "size-limit",
-		"test": "vitest",
+		"smoke": "node scripts/smoke.mjs",
+		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
-		"test:run": "vitest run",
+		"test:watch": "vitest",
 		"test:ui": "vitest --ui",
 		"type-check": "tsc --noEmit",
-		"verify": "pnpm run type-check && pnpm run lint && pnpm run format:check && pnpm run test:coverage && pnpm run build && pnpm run size"
-	},
-	"dependencies": {
-		"immer": "^11.1.16",
-		"use-sync-external-store": "^1.6.0"
+		"verify": "pnpm run type-check && pnpm run lint && pnpm run format:check && pnpm run test:coverage && pnpm run build && pnpm run size && pnpm run smoke"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@size-limit/preset-small-lib": "^13.0.3",
-		"@testing-library/react": "^16.3.2",
-		"@types/jsdom": "^30.0.0",
-		"@types/node": "^26.2.0",
-		"@types/react": "^19.2.18",
-		"@types/react-dom": "^19.2.4",
-		"@types/use-sync-external-store": "^1.5.0",
-		"@vitest/coverage-v8": "^4.1.10",
-		"@vitest/ui": "^4.1.10",
-		"eslint": "^10.8.1",
+		"@size-limit/preset-small-lib": "^14.3.0",
+		"@testing-library/react": "^16.3.3",
+		"@types/node": "^26.6.6",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
+		"@vitest/coverage-v8": "^5.1.1",
+		"@vitest/ui": "^5.1.1",
+		"eslint": "^10.15.0",
 		"eslint-plugin-react-hooks": "^7.1.1",
-		"globals": "^17.9.0",
-		"jsdom": "^30.0.1",
-		"prettier": "^3.9.6",
-		"react": "^19.2.8",
-		"react-dom": "^19.2.8",
-		"size-limit": "^13.0.3",
-		"terser": "^5.49.2",
-		"tsup": "^8.5.1",
+		"globals": "^17.14.0",
+		"immer": "^11.2.10",
+		"jsdom": "^31.0.1",
+		"prettier": "^3.10.1",
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1",
+		"size-limit": "^14.3.0",
+		"tsdown": "^0.23.7",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.66.0",
-		"vitest": "^4.1.10"
+		"typescript-eslint": "^8.73.0",
+		"vitest": "^5.1.1"
 	},
 	"peerDependencies": {
-		"react": ">=16.8.0 || ^19.0.0"
+		"immer": "^11.1.16",
+		"react": ">=18.0.0"
 	},
 	"peerDependenciesMeta": {
+		"immer": {
+			"optional": true
+		},
 		"react": {
 			"optional": true
 		}
 	},
 	"packageManager": "pnpm@11.6.0",
 	"engines": {
-		"node": ">=22.12.0"
+		"node": ">=26"
 	},
 	"publishConfig": {
 		"access": "public",
@@ -130,23 +114,41 @@
 		{
 			"name": "Core only",
 			"path": "dist/index.js",
-			"import": "{ createMachine }",
-			"limit": "6 KB"
+			"import": "{ createStore }",
+			"limit": "2.2 KB"
+		},
+		{
+			"name": "Core + immer",
+			"path": [
+				"dist/index.js",
+				"dist/immer.js"
+			],
+			"import": {
+				"dist/index.js": "{ createStore }",
+				"dist/immer.js": "{ immer }"
+			},
+			"limit": "2.5 KB"
+		},
+		{
+			"name": "immer (peer, informational only)",
+			"path": "node_modules/immer/dist/immer.mjs",
+			"import": "{ produce, enablePatches }",
+			"limit": "5 KB"
 		},
 		{
 			"name": "React hooks",
 			"path": "dist/react.js",
-			"limit": "3 KB"
+			"limit": "1.6 KB"
 		},
 		{
 			"name": "Sync WS",
 			"path": "dist/sync-ws.js",
-			"limit": "4 KB"
+			"limit": "1.4 KB"
 		},
 		{
-			"name": "Full bundle",
+			"name": "Main entry (everything)",
 			"path": "dist/index.js",
-			"limit": "15 KB"
+			"limit": "8.5 KB"
 		}
 	]
 }
