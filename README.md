@@ -5,7 +5,7 @@
 [![codecov](https://codecov.io/gh/zerosumstudio/clutch/branch/main/graph/badge.svg)](https://codecov.io/gh/zerosumstudio/clutch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A small, TypeScript-first state store with plugins. The core is an immutable store with `set` and `subscribe`, under 2 KB. Undo/redo, persistence, tab and server sync, validation, autosave and DevTools are plugins you add with `.with()`, and each one adds its methods to the store's type. Immer is an optional plugin for mutable-style updates. It is a store, not a state machine: there are no states or transitions.
+A small, TypeScript-first state store with plugins. The core is an immutable store with `set` and `subscribe`, under 2 KB. Undo/redo, persistence, tab and server sync, validation, autosave and DevTools are plugins you add with `.with()`, and each one adds its methods to the store's type. Immer is an optional plugin for mutable-style updates.
 
 Coming from `@bkincz/clutch` 3.5? See the [migration guide](./docs/migration-1.0.md).
 
