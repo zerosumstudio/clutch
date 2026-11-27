@@ -1,42 +1,40 @@
 /*
  *   IMPORTS
  ***************************************************************************************************/
-import { MachineError, type Machine } from './core'
-import type { HistoryApi } from './plugins/history'
-import type { PersistApi } from './plugins/persist'
-import type { AutosaveApi } from './plugins/autosave'
+import type { Store } from './core'
+import { StoreError } from './error'
 
 /*
  *   TYPES
  ***************************************************************************************************/
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type MachineMap = Record<string, Machine<any>>
+export type StoreMap = Record<string, Store<any>>
 
-export type RegistryState<M extends MachineMap> = {
-	[K in keyof M]: M[K] extends Machine<infer S> ? S : never
+export type RegistryState<M extends StoreMap> = {
+	[K in keyof M]: M[K] extends Store<infer S> ? S : never
 }
 
-export type RegistryListener<M extends MachineMap> = (state: RegistryState<M>) => void
+export type RegistryListener<M extends StoreMap> = (state: RegistryState<M>) => void
 
 /*
  *   REGISTRY
  ***************************************************************************************************/
-export class Registry<M extends MachineMap> {
-	// Direct typed access: registry.machines.user keeps the plugin extensions
-	// that were installed on that machine
-	public readonly machines: M
+export class Registry<M extends StoreMap> {
+	// Direct typed access: registry.stores.user keeps the plugin extensions
+	// that were installed on that store
+	public readonly stores: M
 
 	private listeners: Set<RegistryListener<M>> = new Set()
 	private unsubscribers: (() => void)[] = []
 	private cached: RegistryState<M> | null = null
 	private isDestroyed = false
 
-	constructor(machines: M) {
-		this.machines = machines
+	constructor(stores: M) {
+		this.stores = stores
 
-		for (const machine of Object.values(machines)) {
+		for (const store of Object.values(stores)) {
 			this.unsubscribers.push(
-				machine.subscribe(() => {
+				store.subscribe(() => {
 					this.cached = null
 					this.notify()
 				}),
@@ -46,18 +44,21 @@ export class Registry<M extends MachineMap> {
 
 	/*
 	 * STATE ACCESS
-	 ***************************************************************************************************/
+	 */
 	public getState(): RegistryState<M> {
 		this.assertNotDestroyed()
 
 		if (!this.cached) {
 			const combined = {} as RegistryState<M>
-			for (const key of Object.keys(this.machines) as (keyof M)[]) {
-				const machine = this.machines[key]
-				if (machine) {
-					combined[key] = machine.getState()
+
+			for (const key of Object.keys(this.stores) as (keyof M)[]) {
+				const store = this.stores[key]
+
+				if (store) {
+					combined[key] = store.getState() as RegistryState<M>[typeof key]
 				}
 			}
+
 			this.cached = combined
 		}
 
@@ -68,7 +69,7 @@ export class Registry<M extends MachineMap> {
 		this.assertNotDestroyed()
 
 		if (typeof listener !== 'function') {
-			throw new MachineError('Listener must be a function', 'VALIDATION_ERROR')
+			throw new StoreError('Listener must be a function', 'INVALID_ARGUMENT')
 		}
 
 		this.listeners.add(listener)
@@ -80,64 +81,12 @@ export class Registry<M extends MachineMap> {
 
 	/*
 	 * COORDINATED OPERATIONS
-	 ***************************************************************************************************/
+	 */
 	public resetAll(): void {
 		this.assertNotDestroyed()
 
-		for (const machine of Object.values(this.machines)) {
-			machine.reset()
-		}
-	}
-
-	public hydrateAll(): void {
-		this.assertNotDestroyed()
-
-		for (const machine of Object.values(this.machines)) {
-			;(machine as Partial<PersistApi>).hydrate?.()
-		}
-	}
-
-	public flushAll(): void {
-		this.assertNotDestroyed()
-
-		for (const machine of Object.values(this.machines)) {
-			;(machine as Partial<PersistApi>).flush?.()
-		}
-	}
-
-	public async forceSaveAll(): Promise<void> {
-		this.assertNotDestroyed()
-
-		const saves: Promise<void>[] = []
-
-		for (const machine of Object.values(this.machines)) {
-			const candidate = machine as Partial<AutosaveApi>
-			if (typeof candidate.forceSave === 'function') {
-				saves.push(
-					candidate.forceSave().catch(() => {
-						// Already reported through the machine's own onError plugins
-					}),
-				)
-			}
-		}
-
-		await Promise.all(saves)
-	}
-
-	public hasUnsavedChanges(): boolean {
-		for (const machine of Object.values(this.machines)) {
-			if ((machine as Partial<AutosaveApi>).hasUnsavedChanges?.()) {
-				return true
-			}
-		}
-		return false
-	}
-
-	public clearAllHistory(): void {
-		this.assertNotDestroyed()
-
-		for (const machine of Object.values(this.machines)) {
-			;(machine as Partial<HistoryApi>).clearHistory?.()
+		for (const store of Object.values(this.stores)) {
+			store.reset()
 		}
 	}
 
@@ -149,10 +98,11 @@ export class Registry<M extends MachineMap> {
 		for (const unsubscribe of this.unsubscribers) {
 			unsubscribe()
 		}
+
 		this.unsubscribers = []
 
-		for (const machine of Object.values(this.machines)) {
-			machine.destroy()
+		for (const store of Object.values(this.stores)) {
+			store.destroy()
 		}
 
 		this.listeners.clear()
@@ -160,11 +110,11 @@ export class Registry<M extends MachineMap> {
 	}
 
 	/*
-	 *   PRIVATE METHODS
-	 ***************************************************************************************************/
+	 * PRIVATE METHODS
+	 */
 	private assertNotDestroyed(): void {
 		if (this.isDestroyed) {
-			throw new MachineError('Cannot operate on destroyed Registry', 'DESTROYED')
+			throw new StoreError('Cannot operate on destroyed Registry', 'DESTROYED')
 		}
 	}
 
@@ -178,8 +128,9 @@ export class Registry<M extends MachineMap> {
 		this.listeners.forEach(listener => {
 			try {
 				listener(combined)
-			} catch {
-				// One broken listener should not stop the others
+			} catch (error) {
+				// One broken listener should not stop the others. A registry has no `onError` of its own
+				console.error('[clutch] A registry listener threw', error)
 			}
 		})
 	}
@@ -188,6 +139,6 @@ export class Registry<M extends MachineMap> {
 /*
  *   FACTORY
  ***************************************************************************************************/
-export function createRegistry<M extends MachineMap>(machines: M): Registry<M> {
-	return new Registry(machines)
+export function createRegistry<M extends StoreMap>(stores: M): Registry<M> {
+	return new Registry(stores)
 }

@@ -1,16 +1,63 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-11-28
+
+First release under `@zerosumstudio`. Everything below is a change from `@bkincz/clutch` 3.5.0, and the [migration guide](./docs/migration-1.0.md) opens with a search-and-replace checklist.
 
 ### Breaking
 
-- **Published as `@zerosumstudio/clutch`.** The repo moved to
-  [zerosumstudio/clutch](https://github.com/zerosumstudio/clutch). Swap the package
-  name and the imports, nothing else changes. `@bkincz/clutch` stays on npm at 3.5.0.
+- **Published as `@zerosumstudio/clutch`.** Swap the package name and the imports. `@bkincz/clutch` stays on npm at 3.5.0.
+- **Machine is now Store.** `createMachine`, `MachineError`, `sharedMachine`, `createMachineScope` and `registry.machines` become `createStore`, `StoreError`, `sharedStore`, `createStoreScope` and `registry.stores`.
+- **Immer is an optional plugin.** `pnpm add immer`, then `.with(immer())` from `@zerosumstudio/clutch/immer` to get `mutate`. `Draft` is exported from there too.
+- **`batch` is removed.** Use one `mutate` recipe, or one `set`.
+- **React hooks are consolidated.** `useMachine` and `useSlice` become `useStore(store, selector?, isEqual?)`, which returns state and not `{ state, mutate, batch }`. `useRegistrySlice` becomes `useRegistry(registry, selector?)` and `useMachineHistory` becomes `useHistory`. React 18 or newer.
+- **`useAutosave` and `autosave` report one status.** Read `status`, `error` and `lastSavedAt` instead of `isSaving`, `isLoading`, `saveError`, `loadError` and `lastSaved`. `forceSave()` is `save()`, `loadFromServer()` is `load()`, `auto` is `autoStart`, and `setAutoSaveInterval()` is gone.
+- **`sync({ channel })` is required.** The shared default channel is gone. `mergeStrategy` is `mode` (`state` or `patches`) and `syncDebounce` is `debounceMs`. Messages carry `channel` and no longer carry `inversePatches`, so custom WebSocket servers relay `channel` unchanged. A 3.5 tab and a 1.0 tab don't sync.
+- **WebSocket `authMode` defaults to `message`.** The server must accept a first `{ type: 'auth', token }` frame, or set `authMode: 'query'`. The transport's `onError` option is gone, so its errors reach the store's `onError` as `SYNC_FAILED`.
+- **`persist({ filter })` is `pick`, and `deferred` is `autoStart`.** `deferred: true` becomes `autoStart: false`. `hydrate()`, `flush()` and `clearPersisted()` return promises, and `migrate` receives `unknown`. Stored data needs no migration.
+- **Registry helpers are removed.** `hydrateAll`, `flushAll`, `forceSaveAll`, `hasUnsavedChanges` and `clearAllHistory`. Loop over `registry.stores`.
+- **Classes are types only.** `Machine` and `Registry` are exported as types, and `BroadcastChannelTransport` is no longer exported. Use `createStore` and `createRegistry`.
+- **Error codes are renamed and split.** `VALIDATION_ERROR` becomes `INVALID_ARGUMENT`, `VALIDATION_FAILED` or `PATCH_CONFLICT`, and `PERSISTENCE_ERROR` becomes `PERSISTENCE_FAILED` or `AUTOSAVE_FAILED`. `StoreError.code` is a `StoreErrorCode`.
+- **History info is renamed.** `historyLength` is `length` and `lastAction` is `lastDescription`.
+- **Types are renamed or removed.** `SyncPluginConfig` is `SyncConfig`, `DevToolsConfig` is `DevtoolsConfig`, and `CommitPayload.operation`, `EmptyExtension`, `HistorySnapshot`, `PersistedEnvelope`, `PersistFilter` and `CommitOperation` are gone. `Patch` is clutch's own type.
+- **ESM only, Node 26 or newer.** `require()` of the package still works on Node 26.
+- **Autosave counts undo, hydration and `reset()` as unsaved changes.** It starts its interval without a `window`, and `load()` rejects with `AUTOSAVE_FAILED` on failure.
+
+### Added
+
+- **Core works without immer.** `set` takes a function of the current state, and history, sync and DevTools run on top-level patches.
+- **`persist({ schema })`.** Stored state that fails the schema is reported and not applied, and writes stop so the stored copy survives.
+- **`sync({ pick })`.** Limits what is sent to peers and which keys are accepted from them.
+- **Async storage for `persist`.** `getItem`, `setItem` and `removeItem` can return promises.
+- **`shallowEqual`** for selectors that return a fresh object.
+- **`getAutosaveState()`** on `autosave`.
+- **Plugin API types are exported**, so a plugin-extended store can be named: `Store<AppState> & HistoryApi`.
+- **`maxMessageChars`** on `WebSocketTransport` drops oversized inbound frames.
+- Sync, transport and DevTools failures reach `onError` instead of the console.
+
+### Changed
+
+- The core is 1.89 KB brotli, down from 5.8 KB. Immer and `use-sync-external-store` are no longer dependencies, and the output is unminified.
+- `createStoreScope` destroys its store when the provider unmounts.
+- A remote update keeps the history stack unless it touches a key the stack recorded.
+- DevTools instances are named `Store` by default, and log lines use the `[clutch]` prefix.
 
 ### Fixed
 
-- CommonJS consumers get their own type declarations.
+- DevTools connects in the published build. Property mangling had renamed `__REDUX_DEVTOOLS_EXTENSION__`.
+- Concurrent edits from different tabs settle on one winner on every tab, instead of diverging for good.
+- Autosave no longer marks a change made during a save as saved, and saves no longer overlap.
+- `useHydration().isHydrated` turns `true` when nothing is stored.
+- A local change before `hydrate()` no longer overwrites stored data, and a `migrate` that throws no longer overwrites it either.
+- `clearPersisted()` cancels a pending write instead of bringing the data back.
+- `useHistory` updates after `clearHistory()`.
+- `useAutosave` can report a load failure.
+- WebSocket reconnect backs off when the server accepts the connection and then closes it.
+- `sync` with a `schema` asks for a resync when it drops a patch.
+- Patches with a `__proto__` path or value are rejected, and keys named `constructor` or `prototype` are ordinary data.
+- A plugin that throws in `onInit` leaves nothing running.
+- A Node process exits with a default `sync()` installed.
+- `replaceState` rejects a non-object state.
 
 ## 3.5.0 - 2026-08-13
 
@@ -67,8 +114,8 @@
 
 ### Breaking
 
-- **The v2 API and the `createV2Machine` bridge are gone.** Finish the migration in
-  the [migration guide](./docs/migration-v3.md) before upgrading.
+- **The v2 API and the `createV2Machine` bridge are gone.** Finish the v2 to v3
+  migration before upgrading.
 
 ### Added
 
@@ -100,7 +147,7 @@
 ## 3.0.0 - 2026-06-12
 
 Core does immutable updates and subscriptions only, and every feature is a plugin
-installed with `.with()`. See the [migration guide](./docs/migration-v3.md).
+installed with `.with()`.
 
 ### Breaking
 

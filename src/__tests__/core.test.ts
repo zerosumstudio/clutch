@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createMachine, MachineError, type Plugin, type PluginContext } from '../core'
+import { createStore, shallowEqual, type Plugin, type PluginContext } from '../core'
+import { StoreError } from '../error'
 import { history } from '../plugins/history'
+import { immer } from '../immer'
 
 interface TestState {
 	count: number
@@ -9,156 +11,148 @@ interface TestState {
 
 const initialState = (): TestState => ({ count: 0, name: 'test' })
 
-describe('core Machine', () => {
+describe('core Store', () => {
 	it('mutates state and notifies subscribers', () => {
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() }).with(immer())
 		const listener = vi.fn()
-		machine.subscribe(listener)
+		store.subscribe(listener)
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
 
-		expect(machine.getState().count).toBe(1)
+		expect(store.getState().count).toBe(1)
 		expect(listener).toHaveBeenCalledTimes(1)
 		expect(listener).toHaveBeenCalledWith(expect.objectContaining({ count: 1 }))
 	})
 
 	it('skips commit entirely when recipe produces no patches', () => {
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() }).with(immer())
 		const listener = vi.fn()
 		const onCommit = vi.fn()
-		machine.subscribe(listener)
-		machine.with({ name: 'spy', onCommit })
+		store.subscribe(listener)
+		store.with({ name: 'spy', onCommit })
 
-		machine.mutate(() => {})
+		store.mutate(() => {})
 
 		expect(listener).not.toHaveBeenCalled()
 		expect(onCommit).not.toHaveBeenCalled()
 	})
 
-	it('batches mutations into a single commit', () => {
-		const machine = createMachine({ initialState: initialState() })
+	it('commits several changes from one recipe as a single commit', () => {
+		const store = createStore({ initialState: initialState() }).with(immer())
 		const onCommit = vi.fn()
-		machine.with({ name: 'spy', onCommit })
+		store.with({ name: 'spy', onCommit })
 
-		machine.batch(
-			[
-				draft => {
-					draft.count = 1
-				},
-				draft => {
-					draft.name = 'batched'
-				},
-			],
-			'batch op',
-		)
+		store.mutate(draft => {
+			draft.count = 1
+			draft.name = 'batched'
+		}, 'one recipe')
 
-		expect(machine.getState()).toEqual({ count: 1, name: 'batched' })
+		expect(store.getState()).toEqual({ count: 1, name: 'batched' })
 		expect(onCommit).toHaveBeenCalledTimes(1)
-		expect(onCommit.mock.calls[0]?.[0]).toMatchObject({
-			operation: 'batch',
-			description: 'batch op',
-		})
+		expect(onCommit.mock.calls[0]?.[0]).toMatchObject({ description: 'one recipe' })
 		expect(onCommit.mock.calls[0]?.[0].patches.length).toBe(2)
 	})
 
-	it('accepts a single recipe in batch', () => {
-		const machine = createMachine({ initialState: initialState() }).with(history<TestState>())
-		machine.batch(draft => {
+	it('undoes an immer recipe as one step', () => {
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(history<TestState>())
+		store.mutate(draft => {
 			draft.count = 3
 		}, 'set count')
 
-		expect(machine.getState().count).toBe(3)
-		expect(machine.undo()).toBe(true)
-		expect(machine.getState().count).toBe(0)
+		expect(store.getState().count).toBe(3)
+		expect(store.undo()).toBe(true)
+		expect(store.getState().count).toBe(0)
 	})
 
 	it('rejects an invalid initial state', () => {
-		expect(() => createMachine({ initialState: null as unknown as TestState })).toThrow(
-			MachineError,
-		)
+		expect(() =>
+			createStore({ initialState: null as unknown as TestState }).with(immer()),
+		).toThrow(StoreError)
 	})
 
 	describe('plugin installation', () => {
 		it('throws on duplicate plugin names', () => {
-			const machine = createMachine({ initialState: initialState() })
-			machine.with({ name: 'dup' })
+			const store = createStore({ initialState: initialState() }).with(immer())
+			store.with({ name: 'dup' })
 
-			expect(() => machine.with({ name: 'dup' })).toThrow('already installed')
+			expect(() => store.with({ name: 'dup' })).toThrow('already installed')
 		})
 
 		it('throws when an extension key collides with an existing member', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 
 			expect(() =>
-				machine.with({
+				store.with({
 					name: 'bad',
-					onInit: () => ({ mutate: () => {} }),
+					onInit: () => ({ set: () => {} }),
 				}),
 			).toThrow('collides')
 		})
 
-		it('merges extensions onto the machine with accumulated typing', () => {
-			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>(),
-			)
+		it('merges extensions onto the store with accumulated typing', () => {
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(history<TestState>())
 
 			// Calling undo() here doubles as the compile-time check that .with() carried the type
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 5
 			})
-			expect(machine.canUndo()).toBe(true)
-			expect(machine.undo()).toBe(true)
-			expect(machine.getState().count).toBe(0)
+			expect(store.canUndo()).toBe(true)
+			expect(store.undo()).toBe(true)
+			expect(store.getState().count).toBe(0)
 		})
 	})
 
 	describe('commit hooks', () => {
 		it('vetoes the commit when onBeforeCommit throws', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
 			const onCommit = vi.fn()
-			machine.subscribe(listener)
-			machine.with({
+			store.subscribe(listener)
+			store.with({
 				name: 'validator',
 				onBeforeCommit: payload => {
 					if (payload.state.count < 0) {
-						throw new MachineError('count must be >= 0', 'VALIDATION_ERROR')
+						throw new StoreError('count must be >= 0', 'VALIDATION_FAILED')
 					}
 				},
 				onCommit,
 			})
 
 			expect(() =>
-				machine.mutate(draft => {
+				store.mutate(draft => {
 					draft.count = -1
 				}),
 			).toThrow('count must be >= 0')
 
-			expect(machine.getState().count).toBe(0)
+			expect(store.getState().count).toBe(0)
 			expect(listener).not.toHaveBeenCalled()
 			expect(onCommit).not.toHaveBeenCalled()
 		})
 
 		it('isolates onCommit failures and routes them to onError hooks', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const onError = vi.fn()
 			const lateCommit = vi.fn()
-			machine.with({
+			store.with({
 				name: 'broken',
 				onCommit: () => {
 					throw new Error('plugin exploded')
 				},
 			})
-			machine.with({ name: 'late', onCommit: lateCommit })
-			machine.with({ name: 'errors', onError })
+			store.with({ name: 'late', onCommit: lateCommit })
+			store.with({ name: 'errors', onError })
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 1
 			})
 
-			expect(machine.getState().count).toBe(1)
+			expect(store.getState().count).toBe(1)
 			expect(lateCommit).toHaveBeenCalledTimes(1)
 			expect(onError).toHaveBeenCalledWith(
 				expect.objectContaining({ message: 'plugin exploded' }),
@@ -169,23 +163,23 @@ describe('core Machine', () => {
 
 	describe('external state', () => {
 		it('fans out onExternalState to every plugin except the source', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const sourceHook = vi.fn()
 			const otherHook = vi.fn()
 			let capturedCtx!: PluginContext<TestState>
 
-			machine.with({
+			store.with({
 				name: 'sync',
 				onInit: ctx => {
 					capturedCtx = ctx
 				},
 				onExternalState: sourceHook,
 			})
-			machine.with({ name: 'observer', onExternalState: otherHook })
+			store.with({ name: 'observer', onExternalState: otherHook })
 
 			capturedCtx.replaceState({ count: 99, name: 'remote' }, { source: 'sync' })
 
-			expect(machine.getState()).toEqual({ count: 99, name: 'remote' })
+			expect(store.getState()).toEqual({ count: 99, name: 'remote' })
 			expect(sourceHook).not.toHaveBeenCalled()
 			expect(otherHook).toHaveBeenCalledWith(
 				expect.objectContaining({ count: 99 }),
@@ -197,16 +191,16 @@ describe('core Machine', () => {
 	describe('replaceState', () => {
 		it('swaps state in place, notifying subscribers and external-state plugins', () => {
 			const onExternalState = vi.fn()
-			const machine = createMachine({ initialState: initialState() }).with({
+			const store = createStore({ initialState: initialState() }).with(immer()).with({
 				name: 'sync',
 				onExternalState,
 			})
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.replaceState({ count: 9, name: 'migrated' })
+			store.replaceState({ count: 9, name: 'migrated' })
 
-			expect(machine.getState()).toEqual({ count: 9, name: 'migrated' })
+			expect(store.getState()).toEqual({ count: 9, name: 'migrated' })
 			expect(listener).toHaveBeenCalledWith({ count: 9, name: 'migrated' })
 			expect(onExternalState).toHaveBeenCalledWith(
 				{ count: 9, name: 'migrated' },
@@ -217,295 +211,289 @@ describe('core Machine', () => {
 
 	describe('reset', () => {
 		it('returns to the initial state and notifies listeners', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 5
 			})
-			machine.reset()
+			store.reset()
 
-			expect(machine.getState()).toEqual(initialState())
+			expect(store.getState()).toEqual(initialState())
 			expect(listener).toHaveBeenLastCalledWith(initialState())
-			expect(machine.getInitialState()).toEqual(initialState())
+			expect(store.getInitialState()).toEqual(initialState())
 		})
 
 		it('clears history through the full-replace rule', () => {
-			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>(),
-			)
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(history<TestState>())
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 5
 			})
-			expect(machine.canUndo()).toBe(true)
+			expect(store.canUndo()).toBe(true)
 
-			machine.reset()
+			store.reset()
 
-			expect(machine.canUndo()).toBe(false)
+			expect(store.canUndo()).toBe(false)
 		})
 	})
 
 	describe('destroy', () => {
 		it('calls onDestroy in reverse install order with the final state', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const order: string[] = []
-			machine.with({ name: 'first', onDestroy: () => order.push('first') })
-			machine.with({
+			store.with({ name: 'first', onDestroy: () => order.push('first') })
+			store.with({
 				name: 'second',
 				onDestroy: state => {
-					order.push(`second:${(state as TestState).count}`)
+					order.push(`second:${state.count}`)
 				},
 			})
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 7
 			})
-			machine.destroy()
+			store.destroy()
 
 			expect(order).toEqual(['second:7', 'first'])
-			expect(() => machine.getState()).toThrow('destroyed')
-			expect(() => machine.with({ name: 'late' })).toThrow('destroyed')
+			expect(() => store.getState()).toThrow('destroyed')
+			expect(() => store.with({ name: 'late' })).toThrow('destroyed')
 		})
 	})
 
 	describe('set', () => {
 		it('shallow-merges and notifies', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.set({ count: 5, name: 'merged' })
+			store.set({ count: 5, name: 'merged' })
 
-			expect(machine.getState()).toEqual({ count: 5, name: 'merged' })
+			expect(store.getState()).toEqual({ count: 5, name: 'merged' })
 			expect(listener).toHaveBeenCalledTimes(1)
 		})
 
 		it('is a no-op when nothing changed', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.set({ count: 0, name: 'test' })
+			store.set({ count: 0, name: 'test' })
 			expect(listener).not.toHaveBeenCalled()
 		})
 
 		it('commits per-key patches that history can undo', () => {
-			const machine = createMachine({ initialState: initialState() }).with(
-				history<TestState>(),
-			)
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(history<TestState>())
 
-			machine.set({ count: 1 })
-			machine.set({ count: 2, name: 'later' })
+			store.set({ count: 1 })
+			store.set({ count: 2, name: 'later' })
 
-			expect(machine.undo()).toBe(true)
-			expect(machine.getState()).toEqual({ count: 1, name: 'test' })
-			expect(machine.undo()).toBe(true)
-			expect(machine.getState()).toEqual(initialState())
-			expect(machine.redo()).toBe(true)
-			expect(machine.getState().count).toBe(1)
+			expect(store.undo()).toBe(true)
+			expect(store.getState()).toEqual({ count: 1, name: 'test' })
+			expect(store.undo()).toBe(true)
+			expect(store.getState()).toEqual(initialState())
+			expect(store.redo()).toBe(true)
+			expect(store.getState().count).toBe(1)
 		})
 
 		it('freezes the result like mutate does', () => {
-			const machine = createMachine({ initialState: { items: [] as number[] } })
-			machine.set({ items: [1, 2] })
+			const store = createStore({ initialState: { items: [] as number[] } }).with(immer())
+			store.set({ items: [1, 2] })
 
-			expect(Object.isFrozen(machine.getState())).toBe(true)
-			expect(Object.isFrozen(machine.getState().items)).toBe(true)
+			expect(Object.isFrozen(store.getState())).toBe(true)
+			expect(Object.isFrozen(store.getState().items)).toBe(true)
 		})
 
 		it('rejects a non-object partial', () => {
-			const machine = createMachine({ initialState: initialState() })
-			expect(() => machine.set(null as never)).toThrow('Partial state must be an object')
+			const store = createStore({ initialState: initialState() }).with(immer())
+			expect(() => store.set(null as never)).toThrow('Partial state must be an object')
 		})
 	})
 
 	describe('selector subscriptions', () => {
 		it('fires only when the selected value changes, with the previous value', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(state => state.count, listener)
+			store.subscribe(state => state.count, listener)
 
-			machine.set({ name: 'other' })
+			store.set({ name: 'other' })
 			expect(listener).not.toHaveBeenCalled()
 
-			machine.set({ count: 2 })
+			store.set({ count: 2 })
 			expect(listener).toHaveBeenCalledTimes(1)
 			expect(listener).toHaveBeenCalledWith(2, 0)
 		})
 
 		it('respects a custom equality function', () => {
-			const machine = createMachine({ initialState: { items: [] as number[] } })
+			const store = createStore({ initialState: { items: [] as number[] } }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(
+			store.subscribe(
 				state => state.items,
 				listener,
 				(a, b) => a.length === b.length,
 			)
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.items = [9]
 			})
 			expect(listener).toHaveBeenCalledTimes(1)
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.items = [8]
 			})
 			expect(listener).toHaveBeenCalledTimes(1)
 		})
 
 		it('stops firing after unsubscribe', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			const unsubscribe = machine.subscribe(state => state.count, listener)
+			const unsubscribe = store.subscribe(state => state.count, listener)
 
 			unsubscribe()
-			machine.set({ count: 9 })
+			store.set({ count: 9 })
 			expect(listener).not.toHaveBeenCalled()
 		})
 	})
 
 	describe('without plugins', () => {
 		it('still commits and notifies', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count++
 			})
-			expect(machine.getState().count).toBe(1)
+			expect(store.getState().count).toBe(1)
 			expect(listener).toHaveBeenCalledTimes(1)
 		})
 
 		it('skips notification when a recipe changes nothing', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() }).with(immer())
 			const listener = vi.fn()
-			machine.subscribe(listener)
+			store.subscribe(listener)
 
-			machine.mutate(() => {})
+			store.mutate(() => {})
 			expect(listener).not.toHaveBeenCalled()
-		})
-
-		it('runs batch with a single recipe', () => {
-			const machine = createMachine({ initialState: initialState() })
-			machine.batch(draft => {
-				draft.count = 7
-			})
-			expect(machine.getState().count).toBe(7)
 		})
 	})
 
 	describe('initial state', () => {
 		it('freezes the passed object so reset cannot be corrupted', () => {
 			const passed = initialState()
-			const machine = createMachine({ initialState: passed })
+			const store = createStore({ initialState: passed }).with(immer())
 
 			expect(Object.isFrozen(passed)).toBe(true)
-			machine.set({ count: 9 })
-			machine.reset()
-			expect(machine.getState().count).toBe(0)
+			store.set({ count: 9 })
+			store.reset()
+			expect(store.getState().count).toBe(0)
 		})
 	})
 })
 
 describe('plugins/history', () => {
 	const setup = (maxSize?: number) =>
-		createMachine({ initialState: initialState() }).with(history<TestState>({ maxSize }))
+		createStore({ initialState: initialState() })
+			.with(immer())
+			.with(history<TestState>(maxSize === undefined ? {} : { maxSize }))
 
 	it('undoes and redoes through patch history', () => {
-		const machine = setup()
+		const store = setup()
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		}, 'one')
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 2
 		}, 'two')
 
-		expect(machine.undo()).toBe(true)
-		expect(machine.getState().count).toBe(1)
-		expect(machine.undo()).toBe(true)
-		expect(machine.getState().count).toBe(0)
-		expect(machine.undo()).toBe(false)
+		expect(store.undo()).toBe(true)
+		expect(store.getState().count).toBe(1)
+		expect(store.undo()).toBe(true)
+		expect(store.getState().count).toBe(0)
+		expect(store.undo()).toBe(false)
 
-		expect(machine.redo()).toBe(true)
-		expect(machine.getState().count).toBe(1)
-		expect(machine.redo()).toBe(true)
-		expect(machine.getState().count).toBe(2)
-		expect(machine.redo()).toBe(false)
+		expect(store.redo()).toBe(true)
+		expect(store.getState().count).toBe(1)
+		expect(store.redo()).toBe(true)
+		expect(store.getState().count).toBe(2)
+		expect(store.redo()).toBe(false)
 	})
 
 	it('does not record its own undo/redo as new history entries', () => {
-		const machine = setup()
+		const store = setup()
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
-		machine.undo()
-		machine.redo()
+		store.undo()
+		store.redo()
 
-		expect(machine.getHistoryInfo().historyLength).toBe(1)
+		expect(store.getHistoryInfo().length).toBe(1)
 	})
 
 	it('truncates the redo branch when mutating after undo', () => {
-		const machine = setup()
+		const store = setup()
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 2
 		})
-		machine.undo()
-		machine.mutate(draft => {
+		store.undo()
+		store.mutate(draft => {
 			draft.count = 10
 		})
 
-		expect(machine.canRedo()).toBe(false)
-		expect(machine.getHistoryInfo().historyLength).toBe(2)
-		machine.undo()
-		expect(machine.getState().count).toBe(1)
+		expect(store.canRedo()).toBe(false)
+		expect(store.getHistoryInfo().length).toBe(2)
+		store.undo()
+		expect(store.getState().count).toBe(1)
 	})
 
 	it('caps history at maxSize', () => {
-		const machine = setup(2)
+		const store = setup(2)
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 2
 		})
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 3
 		})
 
-		expect(machine.getHistoryInfo().historyLength).toBe(2)
-		expect(machine.undo()).toBe(true)
-		expect(machine.undo()).toBe(true)
-		expect(machine.undo()).toBe(false)
-		expect(machine.getState().count).toBe(1)
+		expect(store.getHistoryInfo().length).toBe(2)
+		expect(store.undo()).toBe(true)
+		expect(store.undo()).toBe(true)
+		expect(store.undo()).toBe(false)
+		expect(store.getState().count).toBe(1)
 	})
 
 	it('keeps getHistoryInfo referentially stable between history changes', () => {
-		const machine = setup()
+		const store = setup()
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		}, 'first')
 
-		const info = machine.getHistoryInfo()
-		expect(machine.getHistoryInfo()).toBe(info)
-		expect(info).toMatchObject({ canUndo: true, canRedo: false, lastAction: 'first' })
+		const info = store.getHistoryInfo()
+		expect(store.getHistoryInfo()).toBe(info)
+		expect(info).toMatchObject({ canUndo: true, canRedo: false, lastDescription: 'first' })
 
-		machine.undo()
-		expect(machine.getHistoryInfo()).not.toBe(info)
+		store.undo()
+		expect(store.getHistoryInfo()).not.toBe(info)
 	})
 
 	it('clears history on a full-state external replacement', () => {
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() }).with(immer())
 		let capturedCtx!: PluginContext<TestState>
 		const ctxCapture: Plugin<TestState> = {
 			name: 'devtools',
@@ -513,7 +501,7 @@ describe('plugins/history', () => {
 				capturedCtx = ctx
 			},
 		}
-		const withHistory = machine.with(ctxCapture).with(history<TestState>())
+		const withHistory = store.with(ctxCapture).with(history<TestState>())
 
 		withHistory.mutate(draft => {
 			draft.count = 1
@@ -524,13 +512,13 @@ describe('plugins/history', () => {
 
 		expect(withHistory.getState().count).toBe(42)
 		expect(withHistory.canUndo()).toBe(false)
-		expect(withHistory.getHistoryInfo().historyLength).toBe(0)
+		expect(withHistory.getHistoryInfo().length).toBe(0)
 	})
 
 	it('keeps history through patch-based external updates', () => {
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() }).with(immer())
 		let capturedCtx!: PluginContext<TestState>
-		const withHistory = machine
+		const withHistory = store
 			.with({
 				name: 'sync',
 				onInit: (ctx: PluginContext<TestState>) => {
@@ -553,5 +541,350 @@ describe('plugins/history', () => {
 
 	it('rejects a non-positive maxSize', () => {
 		expect(() => history({ maxSize: 0 })).toThrow('positive')
+	})
+})
+
+describe('set with a function', () => {
+	it('computes the update from the current state', () => {
+		const store = createStore({ initialState: initialState() })
+
+		store.set(state => ({ count: state.count + 1 }))
+		store.set(state => ({ count: state.count + 1 }))
+
+		expect(store.getState().count).toBe(2)
+	})
+
+	it('commits the keys that changed as top-level patches with inverses', () => {
+		const store = createStore({ initialState: initialState() })
+		const onCommit = vi.fn()
+		store.with({ name: 'spy', onCommit })
+
+		store.set({ count: 3, name: 'test' }, 'change')
+
+		expect(onCommit.mock.calls[0]?.[0]).toMatchObject({
+			description: 'change',
+			patches: [{ op: 'replace', path: ['count'], value: 3 }],
+			inversePatches: [{ op: 'replace', path: ['count'], value: 0 }],
+		})
+		expect(onCommit.mock.calls[0]?.[0]).not.toHaveProperty('operation')
+	})
+
+	it('treats an inherited property name as a new key, so undo removes it', () => {
+		const store = createStore({ initialState: initialState() }).with(history<TestState>())
+
+		store.set({ toString: 'x' } as unknown as Partial<TestState>)
+		expect(Object.hasOwn(store.getState(), 'toString')).toBe(true)
+
+		store.undo()
+
+		expect(Object.hasOwn(store.getState(), 'toString')).toBe(false)
+		expect(typeof store.getState().toString).toBe('function')
+	})
+})
+
+describe('ctx.commit', () => {
+	const capture = () => {
+		let ctx!: PluginContext<TestState>
+		const store = createStore({ initialState: initialState() }).with({
+			name: 'capture',
+			onInit: context => {
+				ctx = context
+			},
+		})
+
+		return { store, ctx: () => ctx }
+	}
+
+	it('commits a new state, diffing the top-level keys when no patches are given', () => {
+		const { store, ctx } = capture()
+		const onCommit = vi.fn()
+		store.with({ name: 'spy', onCommit })
+
+		ctx().commit({ count: 4, name: 'test' })
+
+		expect(store.getState().count).toBe(4)
+		expect(onCommit.mock.calls[0]?.[0].patches).toEqual([
+			{ op: 'replace', path: ['count'], value: 4 },
+		])
+	})
+
+	it('passes along patches it was given, and runs veto hooks first', () => {
+		const { store, ctx } = capture()
+		store.with({
+			name: 'veto',
+			onBeforeCommit: () => {
+				throw new StoreError('no', 'VALIDATION_FAILED')
+			},
+		})
+
+		expect(() =>
+			ctx().commit(
+				{ count: 4, name: 'test' },
+				{ patches: [{ op: 'replace', path: ['count'], value: 4 }] },
+			),
+		).toThrow('no')
+		expect(store.getState().count).toBe(0)
+	})
+
+	it('is a no-op when the state did not change', () => {
+		const { store, ctx } = capture()
+		const listener = vi.fn()
+		store.subscribe(listener)
+
+		ctx().commit(store.getState())
+
+		expect(listener).not.toHaveBeenCalled()
+	})
+
+	it('freezes what it commits', () => {
+		const { store, ctx } = capture()
+		const next = { count: 1, name: 'x', extra: { deep: [1] } }
+
+		ctx().commit(next)
+
+		expect(Object.isFrozen(store.getState())).toBe(true)
+		expect(Object.isFrozen(next.extra.deep)).toBe(true)
+	})
+
+	it('rejects a state that is not an object', () => {
+		const { ctx } = capture()
+
+		expect(() => ctx().commit(undefined as never)).toThrow('State must be an object')
+	})
+})
+
+describe('state validity', () => {
+	it.each([[undefined], [null], [[1, 2]], ['text'], [5]])(
+		'replaceState rejects %j and leaves the state alone',
+		value => {
+			const store = createStore({ initialState: initialState() })
+			const listener = vi.fn()
+			store.subscribe(listener)
+
+			expect(() => store.replaceState(value as never)).toThrow('State must be an object')
+
+			expect(store.getState()).toEqual(initialState())
+			expect(listener).not.toHaveBeenCalled()
+		},
+	)
+
+	it('rejects an array or primitive as the initial state', () => {
+		expect(() => createStore({ initialState: [] as never })).toThrow('must be an object')
+		expect(() => createStore({ initialState: 5 as never })).toThrow('must be an object')
+	})
+
+	it('freezes state that comes in through replaceState and patches', () => {
+		const store = createStore({ initialState: { n: { y: 1 }, list: [1] } })
+
+		store.replaceState({ n: { y: 2 }, list: [2] })
+		expect(Object.isFrozen(store.getState().n)).toBe(true)
+		expect(Object.isFrozen(store.getState().list)).toBe(true)
+
+		let ctx!: PluginContext<{ n: { y: number }; list: number[] }>
+		store.with({
+			name: 'capture',
+			onInit: context => {
+				ctx = context
+			},
+		})
+		ctx.applyPatches([{ op: 'add', path: ['list', 1], value: 3 }], { source: 'test' })
+
+		expect(store.getState().list).toEqual([2, 3])
+		expect(Object.isFrozen(store.getState().list)).toBe(true)
+	})
+})
+
+describe('a failed plugin install', () => {
+	it('leaves nothing registered when onInit throws, and cleans up after itself', () => {
+		const store = createStore({ initialState: initialState() })
+		const onCommit = vi.fn()
+		const onDestroy = vi.fn()
+
+		expect(() =>
+			store.with({
+				name: 'broken',
+				onInit: () => {
+					throw new Error('init failed')
+				},
+				onCommit,
+				onDestroy,
+			}),
+		).toThrow('init failed')
+
+		store.set({ count: 1 })
+
+		expect(onCommit).not.toHaveBeenCalled()
+		expect(onDestroy).toHaveBeenCalledTimes(1)
+		expect(() => store.with({ name: 'broken' })).not.toThrow()
+	})
+
+	it('leaves nothing registered when an extension collides', () => {
+		const store = createStore({ initialState: initialState() })
+		const onCommit = vi.fn()
+
+		expect(() =>
+			store.with({ name: 'colliding', onInit: () => ({ set: () => {} }), onCommit }),
+		).toThrow('collides')
+
+		store.set({ count: 1 })
+
+		expect(onCommit).not.toHaveBeenCalled()
+		expect(() => store.with({ name: 'colliding' })).not.toThrow()
+	})
+})
+
+describe('errors', () => {
+	it('gives onError a StoreError with a code, whatever was thrown', () => {
+		const store = createStore({ initialState: initialState() })
+		const onError = vi.fn()
+		store.with({
+			name: 'broken',
+			onCommit: () => {
+				throw new Error('plain error')
+			},
+		})
+		store.with({ name: 'errors', onError })
+
+		store.set({ count: 1 })
+
+		const error = onError.mock.calls[0]?.[0]
+		expect(error).toBeInstanceOf(StoreError)
+		expect(error.code).toBe('PLUGIN_FAILED')
+		expect(error.cause).toBeInstanceOf(Error)
+	})
+
+	it('reports a throwing listener through onError and keeps notifying the rest', () => {
+		const store = createStore({ initialState: initialState() })
+		const onError = vi.fn()
+		const later = vi.fn()
+		store.with({ name: 'errors', onError })
+		store.subscribe(() => {
+			throw new Error('listener failed')
+		})
+		store.subscribe(later)
+
+		store.set({ count: 1 })
+
+		expect(later).toHaveBeenCalled()
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'PLUGIN_FAILED' }),
+			'notify',
+		)
+	})
+
+	it('falls back to the console only when no plugin handles errors', () => {
+		const store = createStore({ initialState: initialState() })
+		store.with({
+			name: 'broken',
+			onCommit: () => {
+				throw new Error('nobody listens')
+			},
+		})
+
+		store.set({ count: 1 })
+
+		expect(console.error).toHaveBeenCalled()
+	})
+
+	it('uses DESTROYED and DUPLICATE_PLUGIN codes', () => {
+		const store = createStore({ initialState: initialState() })
+		store.with({ name: 'dup' })
+
+		expect(() => store.with({ name: 'dup' })).toThrow(
+			expect.objectContaining({ code: 'DUPLICATE_PLUGIN' }),
+		)
+
+		store.destroy()
+
+		expect(() => store.getState()).toThrow(expect.objectContaining({ code: 'DESTROYED' }))
+	})
+})
+
+describe('shallowEqual', () => {
+	it('compares one level deep', () => {
+		expect(shallowEqual({ a: 1, b: 'x' }, { a: 1, b: 'x' })).toBe(true)
+		expect(shallowEqual({ a: 1 }, { a: 2 })).toBe(false)
+		expect(shallowEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false)
+		expect(shallowEqual({ a: { x: 1 } }, { a: { x: 1 } })).toBe(false)
+		expect(shallowEqual([1, 2], [1, 2])).toBe(true)
+		expect(shallowEqual([1, 2], [1, 3])).toBe(false)
+	})
+
+	it('handles primitives, null and key sets that only differ by name', () => {
+		expect(shallowEqual(1, 1)).toBe(true)
+		expect(shallowEqual(1, 2)).toBe(false)
+		expect(shallowEqual(null, null)).toBe(true)
+		expect(shallowEqual(null, {})).toBe(false)
+		expect(shallowEqual({ a: undefined }, { b: undefined })).toBe(false)
+		expect(shallowEqual([], {})).toBe(false)
+		expect(shallowEqual(NaN, NaN)).toBe(true)
+	})
+})
+
+describe('history limits', () => {
+	it.each([[Number.NaN], [1.5], [-1], [Infinity]])('rejects maxSize %s', maxSize => {
+		expect(() => history({ maxSize })).toThrow('positive integer')
+	})
+})
+
+describe('shallowEqual with maps, sets and other objects', () => {
+	it('compares Map entries', () => {
+		expect(shallowEqual(new Map([[1, 2]]), new Map([[1, 2]]))).toBe(true)
+		expect(shallowEqual(new Map([[1, 2]]), new Map([[3, 4]]))).toBe(false)
+		expect(shallowEqual(new Map([[1, 2]]), new Map([[1, 3]]))).toBe(false)
+		expect(shallowEqual(new Map([[1, 2]]), new Map())).toBe(false)
+		expect(shallowEqual(new Map([[1, { a: 1 }]]), new Map([[1, { a: 1 }]]))).toBe(false)
+	})
+
+	it('compares Set members', () => {
+		expect(shallowEqual(new Set([1, 2]), new Set([2, 1]))).toBe(true)
+		expect(shallowEqual(new Set([1]), new Set([2]))).toBe(false)
+		expect(shallowEqual(new Set([1]), new Set([1, 2]))).toBe(false)
+	})
+
+	it('does not mix a Map or Set with a plain object', () => {
+		expect(shallowEqual<unknown>(new Map(), {})).toBe(false)
+		expect(shallowEqual<unknown>({}, new Set())).toBe(false)
+		expect(shallowEqual<unknown>(new Map(), new Set())).toBe(false)
+	})
+
+	describe('undo and redo failures', () => {
+		it('say which one failed, and report it as a plugin failure with the cause', () => {
+			interface ListState {
+				list: number[]
+				other: number
+			}
+			let ctx!: PluginContext<ListState>
+			const onError = vi.fn()
+			const store = createStore<ListState>({ initialState: { list: [1], other: 0 } })
+				.with(immer())
+				.with({
+					name: 'capture',
+					onInit: context => {
+						ctx = context
+					},
+				})
+				.with({ name: 'errors', onError })
+				.with(history<ListState>())
+
+			store.mutate(draft => {
+				draft.list.push(2)
+			})
+			// The list is emptied behind history's back, while claiming to touch another key
+			ctx.replaceState(
+				{ list: [], other: 1 },
+				{ source: 'other-plugin', patches: [{ op: 'replace', path: ['other'], value: 1 }] },
+			)
+
+			expect(store.undo()).toBe(false)
+			expect(onError).toHaveBeenCalledWith(
+				expect.objectContaining({
+					code: 'PLUGIN_FAILED',
+					message: expect.stringContaining('Undo failed'),
+					cause: expect.objectContaining({ code: 'PATCH_CONFLICT' }),
+				}),
+				'undo',
+			)
+		})
 	})
 })

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createMachine, type PluginContext } from '../core'
+import { createStore, type PluginContext } from '../core'
 import { devtools } from '../plugins/devtools'
 import { history } from '../plugins/history'
+import { immer } from '../immer'
 
 interface TestState {
 	count: number
@@ -48,9 +49,9 @@ describe('plugins/devtools', () => {
 	})
 
 	it('connects and sends the initial state on install', () => {
-		createMachine({ initialState: initialState() }).with(
-			devtools<TestState>({ name: 'TestApp', maxAge: 10 }),
-		)
+		createStore({ initialState: initialState() })
+			.with(immer())
+			.with(devtools<TestState>({ name: 'TestApp', maxAge: 10 }))
 
 		expect(mockExtension.connect).toHaveBeenCalledWith(
 			expect.objectContaining({ name: 'TestApp', maxAge: 10 }),
@@ -59,9 +60,11 @@ describe('plugins/devtools', () => {
 	})
 
 	it('sends commits with description and patch count', () => {
-		const machine = createMachine({ initialState: initialState() }).with(devtools<TestState>())
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(devtools<TestState>())
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		}, 'increment')
 
@@ -73,15 +76,17 @@ describe('plugins/devtools', () => {
 		)
 	})
 
-	it('falls back to the operation name when a commit has no description', () => {
-		const machine = createMachine({ initialState: initialState() }).with(devtools<TestState>())
+	it('labels a commit without a description as an update', () => {
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(devtools<TestState>())
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
 
 		expect(mockConnection.send).toHaveBeenCalledWith(
-			expect.objectContaining({ type: 'mutate' }),
+			expect.objectContaining({ type: 'update' }),
 			expect.anything(),
 			{},
 			expect.any(String),
@@ -90,7 +95,8 @@ describe('plugins/devtools', () => {
 
 	it('sends external updates from other plugins, labeled by source', () => {
 		let capturedCtx!: PluginContext<TestState>
-		createMachine({ initialState: initialState() })
+		createStore({ initialState: initialState() })
+			.with(immer())
 			.with({
 				name: 'sync',
 				onInit: (ctx: PluginContext<TestState>) => {
@@ -110,16 +116,17 @@ describe('plugins/devtools', () => {
 	})
 
 	it('shows undo operations coming from the history plugin', () => {
-		const machine = createMachine({ initialState: initialState() })
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
 			.with(devtools<TestState>())
 			.with(history<TestState>())
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		}, 'increment')
 		mockConnection.send.mockClear()
 
-		machine.undo()
+		store.undo()
 
 		expect(mockConnection.send).toHaveBeenCalledWith(
 			expect.objectContaining({ type: 'increment' }),
@@ -131,14 +138,15 @@ describe('plugins/devtools', () => {
 
 	describe('time travel', () => {
 		it('applies JUMP_TO_STATE via replaceState and clears history', () => {
-			const machine = createMachine({ initialState: initialState() })
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
 				.with(devtools<TestState>())
 				.with(history<TestState>())
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 1
 			})
-			expect(machine.canUndo()).toBe(true)
+			expect(store.canUndo()).toBe(true)
 			mockConnection.send.mockClear()
 
 			dispatch({
@@ -147,16 +155,16 @@ describe('plugins/devtools', () => {
 				state: JSON.stringify({ count: 77, name: 'jumped' }),
 			})
 
-			expect(machine.getState()).toEqual({ count: 77, name: 'jumped' })
-			expect(machine.canUndo()).toBe(false)
+			expect(store.getState()).toEqual({ count: 77, name: 'jumped' })
+			expect(store.canUndo()).toBe(false)
 			// Our own time travel must not echo back to the extension
 			expect(mockConnection.send).not.toHaveBeenCalled()
 		})
 
 		it('applies the last computed state from IMPORT_STATE', () => {
-			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>(),
-			)
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(devtools<TestState>())
 
 			dispatch({
 				type: 'DISPATCH',
@@ -172,13 +180,13 @@ describe('plugins/devtools', () => {
 				},
 			})
 
-			expect(machine.getState()).toEqual({ count: 3, name: 'imported' })
+			expect(store.getState()).toEqual({ count: 3, name: 'imported' })
 		})
 
 		it('rejects prototype pollution in time-travel payloads', () => {
-			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>(),
-			)
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(devtools<TestState>())
 
 			dispatch({
 				type: 'DISPATCH',
@@ -187,17 +195,80 @@ describe('plugins/devtools', () => {
 			})
 
 			expect(({} as Record<string, unknown>).polluted).toBeUndefined()
-			expect(Object.prototype.hasOwnProperty.call(machine.getState(), '__proto__')).toBe(
-				false,
-			)
+			expect(Object.prototype.hasOwnProperty.call(store.getState(), '__proto__')).toBe(false)
 		})
 	})
 
+	it('accepts imported state that holds the word constructor as data', () => {
+		const store = createStore({ initialState: initialState() }).with(devtools<TestState>())
+
+		dispatch({
+			type: 'DISPATCH',
+			payload: {
+				type: 'IMPORT_STATE',
+				nextLiftedState: { computedStates: [{ state: { count: 1, name: 'constructor' } }] },
+			},
+		})
+
+		expect(store.getState()).toEqual({ count: 1, name: 'constructor' })
+	})
+
+	it('reports a failing send through onError instead of breaking the commit', () => {
+		const onError = vi.fn()
+		const store = createStore({ initialState: initialState() })
+			.with({ name: 'errors', onError })
+			.with(devtools<TestState>())
+		mockConnection.send.mockImplementation(() => {
+			throw new Error('extension gone')
+		})
+
+		store.set({ count: 1 })
+
+		expect(store.getState().count).toBe(1)
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'DEVTOOLS_FAILED' }),
+			'devtools',
+		)
+	})
+
+	it('reports a failed connect through onError', () => {
+		const onError = vi.fn()
+		mockExtension.connect.mockImplementation(() => {
+			throw new Error('no port')
+		})
+
+		createStore({ initialState: initialState() })
+			.with({ name: 'errors', onError })
+			.with(devtools<TestState>())
+
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'DEVTOOLS_FAILED' }),
+			'devtools',
+		)
+	})
+
+	it('reports a rejected time-travel payload', () => {
+		const onError = vi.fn()
+		const store = createStore({ initialState: initialState() })
+			.with({ name: 'errors', onError })
+			.with(devtools<TestState>())
+
+		dispatch({ type: 'DISPATCH', payload: { type: 'JUMP_TO_STATE' }, state: '[1,2]' })
+
+		expect(store.getState()).toEqual(initialState())
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'DEVTOOLS_FAILED' }),
+			'devtools',
+		)
+	})
+
 	it('disconnects on destroy', () => {
-		const machine = createMachine({ initialState: initialState() }).with(devtools<TestState>())
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(devtools<TestState>())
 
 		const unsubscribe = mockConnection.subscribe.mock.results[0]?.value
-		machine.destroy()
+		store.destroy()
 
 		expect(unsubscribe).toHaveBeenCalled()
 		expect(mockConnection.unsubscribe).toHaveBeenCalled()
@@ -206,13 +277,15 @@ describe('plugins/devtools', () => {
 	it('stays inert when the extension is missing', () => {
 		delete (window as unknown as Record<string, unknown>).__REDUX_DEVTOOLS_EXTENSION__
 
-		const machine = createMachine({ initialState: initialState() }).with(devtools<TestState>())
+		const store = createStore({ initialState: initialState() })
+			.with(immer())
+			.with(devtools<TestState>())
 
-		machine.mutate(draft => {
+		store.mutate(draft => {
 			draft.count = 1
 		})
 
-		expect(machine.getState().count).toBe(1)
+		expect(store.getState().count).toBe(1)
 		expect(mockExtension.connect).not.toHaveBeenCalled()
 	})
 
@@ -220,15 +293,15 @@ describe('plugins/devtools', () => {
 		vi.stubGlobal('window', undefined)
 
 		try {
-			const machine = createMachine({ initialState: initialState() }).with(
-				devtools<TestState>(),
-			)
+			const store = createStore({ initialState: initialState() })
+				.with(immer())
+				.with(devtools<TestState>())
 
-			machine.mutate(draft => {
+			store.mutate(draft => {
 				draft.count = 1
 			})
 
-			expect(machine.getState().count).toBe(1)
+			expect(store.getState().count).toBe(1)
 			expect(mockExtension.connect).not.toHaveBeenCalled()
 		} finally {
 			vi.unstubAllGlobals()

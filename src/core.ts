@@ -1,89 +1,139 @@
 /*
  *   IMPORTS
  ***************************************************************************************************/
-import { produce, enablePatches, applyPatches, freeze, type Patch, type Draft } from 'immer'
-
-let patchesEnabled = false
-const ensurePatches = (): void => {
-	if (!patchesEnabled) {
-		enablePatches()
-		patchesEnabled = true
-	}
-}
-
-/*
- *   ERROR TYPES
- ***************************************************************************************************/
-export class MachineError extends Error {
-	public readonly code: string
-
-	constructor(message: string, code: string) {
-		super(message)
-		this.name = 'MachineError'
-		this.code = code
-	}
-}
+import { StoreError, toStoreError } from './error'
+import { applyPatches, deepFreeze, diffState, isStateObject, type Patch } from './patch'
 
 /*
  *   TYPES
  ***************************************************************************************************/
-export type CommitOperation = 'mutate' | 'batch' | 'set'
-
 export interface CommitPayload<T> {
 	state: T
 	patches: Patch[]
 	inversePatches: Patch[]
 	description: string | undefined
-	operation: CommitOperation
 	timestamp: number
+}
+
+export interface CommitOptions {
+	/** Omit to diff the top-level keys of the new state. */
+	patches?: Patch[] | undefined
+	inversePatches?: Patch[] | undefined
+	description?: string | undefined
 }
 
 export interface ExternalStateMeta {
 	source: string
-	patches?: Patch[]
-	description?: string
+	patches?: Patch[] | undefined
+	description?: string | undefined
 }
 
 export interface PluginContext<T extends object> {
 	getState(): T
 	/**
-	 * Replaces state from outside the normal mutation path, e.g. a remote
-	 * update, hydration, or time travel. Subscribers are notified and every
-	 * plugin except the one named in `meta.source` gets `onExternalState`.
+	 * A local change: runs `onBeforeCommit` (which can veto), applies the state, then runs
+	 * `onCommit`. Without `patches` the top-level keys are diffed.
+	 */
+	commit(state: T, options?: CommitOptions): void
+	/**
+	 * Replaces state from outside the normal update path, e.g. a remote update, hydration, or
+	 * time travel. Subscribers are notified and every plugin except the one named in
+	 * `meta.source` gets `onExternalState`.
 	 */
 	replaceState(state: T, meta: ExternalStateMeta): void
 	applyPatches(patches: Patch[], meta: Omit<ExternalStateMeta, 'patches'>): void
 	subscribe(listener: (state: T) => void): () => void
 	/** Publishes a change a plugin exposes through its own API, without touching state. */
 	notify(): void
-	emitError(error: Error, operation: string): void
+	emitError(error: StoreError, operation: string): void
 }
 
-export type EmptyExtension = Record<never, never>
+// An empty object type on purpose: it adds nothing when a plugin has no extension
+// eslint-disable-next-line @typescript-eslint/no-generated-empty-object-type
+type NoExtension = Record<never, never>
 
-export interface Plugin<T extends object, Ext extends object = EmptyExtension> {
+export interface Plugin<T extends object, Ext extends object = NoExtension> {
 	name: string
-	/** Whatever this returns gets merged onto the machine by `.with()` and shows up in its type. */
+	/** Whatever this returns gets merged onto the store by `.with()` and shows up in its type. */
 	onInit?(ctx: PluginContext<T>): Ext | void
 	/** Throw here to veto the commit before any state is applied. */
 	onBeforeCommit?(payload: CommitPayload<T>): void
 	onCommit?(payload: CommitPayload<T>): void
 	onExternalState?(state: T, meta: ExternalStateMeta): void
-	onError?(error: Error, operation: string): void
+	onError?(error: StoreError, operation: string): void
 	onDestroy?(finalState: T): void
 }
 
-export interface MachineConfig<T extends object> {
+export interface StoreConfig<T extends object> {
 	initialState: T
 }
 
-const toError = (value: unknown): Error =>
-	value instanceof Error ? value : new Error(String(value))
+/** A store whose state can be read and replaced from outside, whatever plugins it has. */
+export interface StatefulStore {
+	getState(): unknown
+	replaceState(state: unknown, meta: ExternalStateMeta): void
+}
+
+export function isStatefulStore(value: unknown): value is StatefulStore {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		typeof (value as StatefulStore).getState === 'function' &&
+		typeof (value as StatefulStore).replaceState === 'function'
+	)
+}
 
 /*
- *   MACHINE
+ *   EQUALITY
  ***************************************************************************************************/
-export class Machine<T extends object> {
+function areMapsEqual(a: Map<unknown, unknown>, b: Map<unknown, unknown>): boolean {
+	return (
+		a.size === b.size &&
+		[...a].every(([key, value]) => b.has(key) && Object.is(value, b.get(key)))
+	)
+}
+
+function areSetsEqual(a: Set<unknown>, b: Set<unknown>): boolean {
+	return a.size === b.size && [...a].every(value => b.has(value))
+}
+
+function areObjectsEqual(a: object, b: object): boolean {
+	const left = a as Record<string, unknown>
+	const right = b as Record<string, unknown>
+	const keys = Object.keys(left)
+
+	return (
+		Array.isArray(a) === Array.isArray(b) &&
+		keys.length === Object.keys(right).length &&
+		keys.every(key => Object.hasOwn(right, key) && Object.is(left[key], right[key]))
+	)
+}
+
+/** Compares two objects, maps or sets one level deep, for selectors that return a fresh value. */
+export function shallowEqual<T>(a: T, b: T): boolean {
+	if (Object.is(a, b)) {
+		return true
+	}
+
+	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+		return false
+	}
+
+	if (a instanceof Map || b instanceof Map) {
+		return a instanceof Map && b instanceof Map && areMapsEqual(a, b)
+	}
+
+	if (a instanceof Set || b instanceof Set) {
+		return a instanceof Set && b instanceof Set && areSetsEqual(a, b)
+	}
+
+	return areObjectsEqual(a, b)
+}
+
+/*
+ *   STORE
+ ***************************************************************************************************/
+export class Store<T extends object> {
 	private state: T
 	private readonly initialState: T
 	private listeners: Set<(state: T) => void> = new Set()
@@ -91,26 +141,21 @@ export class Machine<T extends object> {
 	private isDestroyed = false
 	private readonly ctx: PluginContext<T>
 
-	constructor(config: MachineConfig<T>) {
-		if (
-			!config.initialState ||
-			typeof config.initialState !== 'object' ||
-			config.initialState === null
-		) {
-			throw new MachineError('Initial state must be an object', 'VALIDATION_ERROR')
+	constructor(config: StoreConfig<T>) {
+		if (!isStateObject((config as Partial<StoreConfig<T>> | undefined)?.initialState)) {
+			throw new StoreError('Initial state must be an object', 'INVALID_ARGUMENT')
 		}
 
-		ensurePatches()
-
-		this.state = freeze(config.initialState, true)
+		this.state = deepFreeze(config.initialState)
 		this.initialState = this.state
 
 		this.ctx = {
 			getState: () => this.getState(),
+			commit: (state, options) => this.commit(state, options),
 			replaceState: (state, meta) => this.applyExternalState(state, meta),
 			applyPatches: (patches, meta) => {
-				const next = applyPatches(this.state, patches) as T
-				this.applyExternalState(next, { ...meta, patches })
+				this.assertNotDestroyed()
+				this.applyExternalState(applyPatches(this.state, patches), { ...meta, patches })
 			},
 			subscribe: listener => this.subscribe(listener),
 			notify: () => this.notifyListeners(),
@@ -125,26 +170,27 @@ export class Machine<T extends object> {
 		this.assertNotDestroyed()
 
 		if (this.plugins.some(installed => installed.name === plugin.name)) {
-			throw new MachineError(
-				`Plugin "${plugin.name}" is already installed`,
-				'DUPLICATE_PLUGIN',
-			)
+			throw new StoreError(`Plugin "${plugin.name}" is already installed`, 'DUPLICATE_PLUGIN')
 		}
 
-		this.plugins.push(plugin as Plugin<T, object>)
+		try {
+			const extension = plugin.onInit?.(this.ctx)
 
-		const extension = plugin.onInit?.(this.ctx)
-		if (extension) {
-			for (const key of Object.keys(extension)) {
-				if (key in this) {
-					throw new MachineError(
-						`Plugin "${plugin.name}" extension "${key}" collides with an existing member`,
-						'EXTENSION_COLLISION',
-					)
-				}
+			if (extension) {
+				this.installExtension(plugin.name, extension)
 			}
-			Object.assign(this, extension)
+		} catch (error) {
+			// A failed install must not leave timers or listeners behind
+			try {
+				plugin.onDestroy?.(this.state)
+			} catch {
+				// The original error is the one worth reporting
+			}
+
+			throw error
 		}
+
+		this.plugins.push(plugin)
 
 		return this as this & Ext
 	}
@@ -154,29 +200,31 @@ export class Machine<T extends object> {
 	 */
 	public getState(): T {
 		this.assertNotDestroyed()
+
 		return this.state
 	}
 
 	public subscribe(listener: (state: T) => void): () => void
 	public subscribe<S>(
 		selector: (state: T) => S,
-		listener: (selected: S, previous: S) => void,
-		equalityFn?: (a: S, b: S) => boolean,
+		listener: (next: S, previous: S) => void,
+		isEqual?: (a: S, b: S) => boolean,
 	): () => void
 	public subscribe<S>(
 		selectorOrListener: ((state: T) => void) | ((state: T) => S),
-		maybeListener?: (selected: S, previous: S) => void,
-		equalityFn: (a: S, b: S) => boolean = Object.is,
+		maybeListener?: (next: S, previous: S) => void,
+		isEqual: (a: S, b: S) => boolean = Object.is,
 	): () => void {
 		this.assertNotDestroyed()
 
 		if (typeof selectorOrListener !== 'function') {
-			throw new MachineError('Listener must be a function', 'VALIDATION_ERROR')
+			throw new StoreError('Listener must be a function', 'INVALID_ARGUMENT')
 		}
 
 		if (typeof maybeListener !== 'function') {
-			const listener = selectorOrListener as (state: T) => void
+			const listener = selectorOrListener
 			this.listeners.add(listener)
+
 			return () => {
 				this.listeners.delete(listener)
 			}
@@ -186,158 +234,32 @@ export class Machine<T extends object> {
 		let current = selector(this.state)
 		const wrapped = (state: T): void => {
 			const next = selector(state)
-			if (!equalityFn(current, next)) {
+
+			if (!isEqual(current, next)) {
 				const previous = current
 				current = next
 				maybeListener(next, previous)
 			}
 		}
+
 		this.listeners.add(wrapped)
+
 		return () => {
 			this.listeners.delete(wrapped)
 		}
 	}
 
-	public mutate(recipe: (draft: Draft<T>) => void, description?: string): void {
+	/** Shallow merge, from a partial or from a function of the current state. */
+	public set(update: Partial<T> | ((state: T) => Partial<T>), description?: string): void {
 		this.assertNotDestroyed()
 
-		if (typeof recipe !== 'function') {
-			throw new MachineError('Recipe must be a function', 'VALIDATION_ERROR')
-		}
-
-		if (this.plugins.length === 0) {
-			const nextState = produce(this.state, recipe)
-			if (nextState === this.state) {
-				return
-			}
-			this.state = nextState
-			this.notifyListeners()
-			return
-		}
-
-		let patches: Patch[] = []
-		let inversePatches: Patch[] = []
-
-		const nextState = produce(this.state, recipe, (p, ip) => {
-			patches = p
-			inversePatches = ip
-		})
-
-		if (patches.length === 0) {
-			return
-		}
-
-		this.commit(nextState, patches, inversePatches, description, 'mutate')
-	}
-
-	// Shallow merge without immer. Patches are synthesized per changed key so
-	// plugins see a normal commit.
-	public set(partial: Partial<T>, description?: string): void {
-		this.assertNotDestroyed()
+		const partial: unknown = typeof update === 'function' ? update(this.state) : update
 
 		if (!partial || typeof partial !== 'object') {
-			throw new MachineError('Partial state must be an object', 'VALIDATION_ERROR')
+			throw new StoreError('Partial state must be an object', 'INVALID_ARGUMENT')
 		}
 
-		const patches: Patch[] = []
-		const inversePatches: Patch[] = []
-
-		for (const key of Object.keys(partial)) {
-			const next = partial[key as keyof T] as T[keyof T]
-			const existing = this.state[key as keyof T]
-			if (Object.is(existing, next)) {
-				continue
-			}
-			if (key in this.state) {
-				patches.push({ op: 'replace', path: [key], value: next })
-				inversePatches.push({ op: 'replace', path: [key], value: existing })
-			} else {
-				patches.push({ op: 'add', path: [key], value: next })
-				inversePatches.push({ op: 'remove', path: [key] })
-			}
-		}
-
-		if (patches.length === 0) {
-			return
-		}
-
-		const nextState = freeze({ ...this.state, ...partial }, true)
-
-		if (this.plugins.length === 0) {
-			this.state = nextState
-			this.notifyListeners()
-			return
-		}
-
-		this.commit(nextState, patches, inversePatches, description, 'set')
-	}
-
-	public batch(
-		mutations: Array<(draft: Draft<T>) => void> | ((draft: Draft<T>) => void),
-		description?: string,
-	): void {
-		this.assertNotDestroyed()
-
-		if (typeof mutations === 'function') {
-			mutations = [mutations]
-		}
-
-		if (!Array.isArray(mutations)) {
-			throw new MachineError('Mutations must be a function or an array', 'VALIDATION_ERROR')
-		}
-
-		if (mutations.length === 0) {
-			return
-		}
-
-		if (this.plugins.length === 0) {
-			const nextState = mutations.reduce((currentState, recipe, index) => {
-				if (typeof recipe !== 'function') {
-					throw new MachineError(
-						`Mutation at index ${index} must be a function`,
-						'VALIDATION_ERROR',
-					)
-				}
-				return produce(currentState, recipe)
-			}, this.state)
-			if (nextState === this.state) {
-				return
-			}
-			this.state = nextState
-			this.notifyListeners()
-			return
-		}
-
-		const allPatches: Patch[] = []
-		const allInversePatches: Patch[] = []
-
-		const finalState = mutations.reduce((currentState, recipe, index) => {
-			if (typeof recipe !== 'function') {
-				throw new MachineError(
-					`Mutation at index ${index} must be a function`,
-					'VALIDATION_ERROR',
-				)
-			}
-
-			let patches: Patch[] = []
-			let inversePatches: Patch[] = []
-
-			const nextState = produce(currentState, recipe, (p, ip) => {
-				patches = p
-				inversePatches = ip
-			})
-
-			allPatches.push(...patches)
-			allInversePatches.unshift(...inversePatches)
-
-			return nextState
-		}, this.state)
-
-		if (allPatches.length === 0) {
-			return
-		}
-
-		this.commit(finalState, allPatches, allInversePatches, description, 'batch')
+		this.commit({ ...this.state, ...(partial as Partial<T>) }, { description })
 	}
 
 	/*
@@ -374,7 +296,10 @@ export class Machine<T extends object> {
 			try {
 				this.plugins[i]?.onDestroy?.(finalState)
 			} catch (error) {
-				this.emitError(toError(error), `plugin:${this.plugins[i]?.name}:onDestroy`)
+				this.emitError(
+					toStoreError(error, 'PLUGIN_FAILED'),
+					`plugin:${this.plugins[i]?.name}:onDestroy`,
+				)
 			}
 		}
 
@@ -384,27 +309,51 @@ export class Machine<T extends object> {
 	}
 
 	/*
-	 *   PRIVATE METHODS
-	 ***************************************************************************************************/
+	 * PRIVATE METHODS
+	 */
+	private installExtension(pluginName: string, extension: object): void {
+		for (const key of Object.keys(extension)) {
+			if (key in this) {
+				throw new StoreError(
+					`Plugin "${pluginName}" extension "${key}" collides with an existing member`,
+					'EXTENSION_COLLISION',
+				)
+			}
+		}
+
+		Object.assign(this, extension)
+	}
+
 	private assertNotDestroyed(): void {
 		if (this.isDestroyed) {
-			throw new MachineError('Cannot operate on destroyed Machine', 'DESTROYED')
+			throw new StoreError('Cannot operate on destroyed Store', 'DESTROYED')
 		}
 	}
 
-	private commit(
-		nextState: T,
-		patches: Patch[],
-		inversePatches: Patch[],
-		description: string | undefined,
-		operation: CommitOperation,
-	): void {
+	private assertValidState(state: unknown): asserts state is T {
+		if (!isStateObject(state)) {
+			throw new StoreError('State must be an object', 'INVALID_ARGUMENT')
+		}
+	}
+
+	private commit(nextState: T, options: CommitOptions = {}): void {
+		this.assertNotDestroyed()
+		this.assertValidState(nextState)
+
+		const { patches, inversePatches } = options.patches
+			? { patches: options.patches, inversePatches: options.inversePatches ?? [] }
+			: diffState(this.state, nextState)
+
+		if (patches.length === 0) {
+			return
+		}
+
+		const state = deepFreeze(nextState)
 		const payload: CommitPayload<T> = {
-			state: nextState,
+			state,
 			patches,
 			inversePatches,
-			description,
-			operation,
+			description: options.description,
 			timestamp: Date.now(),
 		}
 
@@ -412,13 +361,16 @@ export class Machine<T extends object> {
 			plugin.onBeforeCommit?.(payload)
 		}
 
-		this.state = nextState
+		this.state = state
 
 		for (const plugin of this.plugins) {
 			try {
 				plugin.onCommit?.(payload)
 			} catch (error) {
-				this.emitError(toError(error), `plugin:${plugin.name}:onCommit`)
+				this.emitError(
+					toStoreError(error, 'PLUGIN_FAILED'),
+					`plugin:${plugin.name}:onCommit`,
+				)
 			}
 		}
 
@@ -427,8 +379,9 @@ export class Machine<T extends object> {
 
 	private applyExternalState(nextState: T, meta: ExternalStateMeta): void {
 		this.assertNotDestroyed()
+		this.assertValidState(nextState)
 
-		this.state = nextState
+		this.state = deepFreeze(nextState)
 
 		for (const plugin of this.plugins) {
 			if (plugin.name === meta.source) {
@@ -436,9 +389,12 @@ export class Machine<T extends object> {
 			}
 
 			try {
-				plugin.onExternalState?.(nextState, meta)
+				plugin.onExternalState?.(this.state, meta)
 			} catch (error) {
-				this.emitError(toError(error), `plugin:${plugin.name}:onExternalState`)
+				this.emitError(
+					toStoreError(error, 'PLUGIN_FAILED'),
+					`plugin:${plugin.name}:onExternalState`,
+				)
 			}
 		}
 
@@ -450,17 +406,17 @@ export class Machine<T extends object> {
 			try {
 				listener(this.state)
 			} catch (error) {
-				this.emitError(toError(error), 'notify')
+				this.emitError(toStoreError(error, 'PLUGIN_FAILED'), 'notify')
 			}
 		})
 	}
 
-	private emitError(error: Error, operation: string): void {
-		let handled = false
+	private emitError(error: StoreError, operation: string): void {
+		let isHandled = false
 
 		for (const plugin of this.plugins) {
 			if (plugin.onError) {
-				handled = true
+				isHandled = true
 				try {
 					plugin.onError(error, operation)
 				} catch {
@@ -469,8 +425,8 @@ export class Machine<T extends object> {
 			}
 		}
 
-		if (!handled) {
-			console.error(`[Machine] Unhandled plugin error during ${operation}`, error)
+		if (!isHandled) {
+			console.error(`[clutch] Unhandled error during ${operation}`, error)
 		}
 	}
 }
@@ -478,6 +434,6 @@ export class Machine<T extends object> {
 /*
  *   FACTORY
  ***************************************************************************************************/
-export function createMachine<T extends object>(config: MachineConfig<T>): Machine<T> {
-	return new Machine(config)
+export function createStore<T extends object>(config: StoreConfig<T>): Store<T> {
+	return new Store(config)
 }

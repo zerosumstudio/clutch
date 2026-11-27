@@ -1,53 +1,30 @@
 {
+	"$schema": "https://json.schemastore.org/tsconfig",
 	"compilerOptions": {
-		"target": "ES2020",
-		"lib": ["ES2020", "DOM", "DOM.Iterable"],
+		"target": "ES2022",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
+		"jsx": "react-jsx",
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+		"noEmit": true,
 
-		// tsup sets baseUrl, which TS 6 deprecates
-		"ignoreDeprecations": "6.0",
-		"declaration": true,
-		"declarationMap": true,
-		"sourceMap": true,
-		"outDir": "./dist",
-		"rootDir": "./src",
+		/* Checks */
 		"strict": true,
-		"noImplicitAny": true,
-		"strictNullChecks": true,
-		"strictFunctionTypes": true,
-		"strictBindCallApply": true,
-		"strictPropertyInitialization": true,
-		"noImplicitThis": true,
-		"noImplicitReturns": true,
-		"noFallthroughCasesInSwitch": true,
-		"noUncheckedIndexedAccess": true,
 		"exactOptionalPropertyTypes": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitReturns": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
 		"allowUnusedLabels": false,
 		"allowUnreachableCode": false,
-		"noUnusedParameters": false,
-		"noPropertyAccessFromIndexSignature": false,
-		"esModuleInterop": true,
-		"allowSyntheticDefaultImports": true,
-		"forceConsistentCasingInFileNames": true,
-		"skipLibCheck": true,
-		"resolveJsonModule": true,
+
+		/* Modules */
+		"verbatimModuleSyntax": true,
 		"isolatedModules": true,
-		"noEmit": false,
-		"jsx": "react-jsx",
-		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true,
-		"removeComments": false,
-		"preserveConstEnums": true,
-		"composite": false
+		"forceConsistentCasingInFileNames": true
 	},
 	"include": ["src/**/*"],
-	"exclude": [
-		"node_modules",
-		"dist",
-		"**/*.test.ts",
-		"**/*.test.tsx",
-		"**/*.spec.ts",
-		"**/*.spec.tsx"
-	]
+	"exclude": ["node_modules", "dist", "coverage"]
 }
