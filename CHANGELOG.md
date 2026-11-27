@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 - 2026-11-26
+## 1.0.0 - 2026-11-28
 
 First release under `@zerosumstudio`. Everything below is a change from `@bkincz/clutch` 3.5.0, and the [migration guide](./docs/migration-1.0.md) opens with a search-and-replace checklist.
 
